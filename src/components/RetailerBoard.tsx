@@ -6,16 +6,21 @@ import { computeRoi, roiBucket } from "@/lib/roi";
 import { RETAILERS, type RetailerKey } from "@/lib/retailers";
 import Dashboard, { type Row } from "@/components/Dashboard";
 
+/**
+ * One board per retailer. Target and Walmart never share a list — separate
+ * URLs, separate counts, separate copy-SKU buttons.
+ */
 export default async function RetailerBoard({ retailer }: { retailer: RetailerKey }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const [user, products] = await Promise.all([
+  const [user, products, syncState] = await Promise.all([
     prisma.user.findUnique({ where: { id: session.user.id } }),
     prisma.product.findMany({
       where: { active: true, retailer },
       orderBy: { createdAt: "desc" },
     }),
+    prisma.syncState.findUnique({ where: { id: "tcgcsv" } }),
   ]);
 
   const taxRate = Number(user?.taxRate ?? 0);
@@ -37,13 +42,14 @@ export default async function RetailerBoard({ retailer }: { retailer: RetailerKe
       notes: p.notes,
       retailPrice,
       marketPrice,
+      linked: p.tcgProductId != null,
+      pricedAt: p.pricedAt.toISOString(),
       ...roi,
       bucket: roiBucket(roi.grossRoi),
     };
   });
 
   const meta = RETAILERS[retailer];
-  const canEdit = session.user.role === "ADMIN";
 
   return (
     <>
@@ -73,7 +79,7 @@ export default async function RetailerBoard({ retailer }: { retailer: RetailerKe
           <span className={`accent ${retailer}`}>{meta.label}</span> SKUs, pricing, and potential ROI
         </h1>
         <p className="subtitle">
-          {canEdit
+          {session.user.role === "ADMIN"
             ? `Paste a ${meta.label} product link to fill in the SKU and name, or type it in. Click any value in the table to edit it.`
             : "Live retail, market value, and return on investment for every tracked SKU."}
         </p>
@@ -82,7 +88,7 @@ export default async function RetailerBoard({ retailer }: { retailer: RetailerKe
           retailer={retailer}
           rows={rows}
           settings={{ taxRate, feePct, shippingCost }}
-          canEdit={canEdit}
+          canEdit={session.user.role === "ADMIN"}
         />
       </main>
     </>

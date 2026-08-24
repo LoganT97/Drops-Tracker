@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { BRANDS } from "@/lib/retailers";
+import { recordSnapshot } from "@/lib/history";
 
 /** Inline edits from the table land here — one field at a time is fine. */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -25,7 +26,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
     data.brand = body.brand;
   }
-
   for (const field of ["retailPrice", "marketPrice"]) {
     if (body[field] !== undefined) {
       const n = Number(body[field]);
@@ -37,11 +37,30 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
   }
 
+  // Linking or unlinking a TCGplayer product. Send tcgProductId: null to
+  // detach and go back to typing the price by hand.
+  if (body.tcgProductId !== undefined) {
+    data.tcgProductId = body.tcgProductId ?? null;
+    data.tcgCategoryId = body.tcgCategoryId ?? null;
+    data.tcgGroupId = body.tcgGroupId ?? null;
+  }
+
   if (data.retailPrice === null) {
     return NextResponse.json({ error: "Retail price can't be blank." }, { status: 400 });
   }
 
-  return NextResponse.json(await prisma.product.update({ where: { id }, data }));
+  const updated = await prisma.product.update({ where: { id }, data });
+
+  // Manual price edits build history too, so unlinked SKUs still get a chart.
+  if (data.marketPrice !== undefined || data.retailPrice !== undefined) {
+    await recordSnapshot(
+      updated.id,
+      updated.marketPrice != null ? Number(updated.marketPrice) : null,
+      Number(updated.retailPrice),
+    );
+  }
+
+  return NextResponse.json(updated);
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {

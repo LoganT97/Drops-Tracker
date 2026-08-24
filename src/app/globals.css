@@ -168,12 +168,19 @@ tbody tr:hover { background: var(--surface-2); }
 h1.title .accent.TARGET { color: var(--red); }
 h1.title .accent.WALMART { color: #6cb0ff; }
 
+/*
+ * The preview is 4x this size and mounts at scale 0.25. Its 20px radius scales
+ * to exactly this 5px. Its 4px border scales to 1px rather than matching this
+ * 2px — if that ever shimmers, an 8px preview border scales to a matching 2px.
+ */
 .thumb {
   width: 42px; height: 42px;
-  border-radius: 8px;
+  /* 20px preview radius x 0.25 mount scale = 5px, so the corners are the same
+     shape at both sizes and stay matched through the animation. */
+  border-radius: 5px;
   object-fit: cover;
   background: var(--surface-2);
-  border: 1px solid var(--line);
+  border: 2px solid var(--mint);
 }
 
 .roi-pill {
@@ -303,6 +310,7 @@ input:focus, select:focus { outline: 2px solid var(--mint); outline-offset: 1px;
   justify-content: center;
   color: var(--muted);
   font-size: 16px;
+  border-color: var(--line);
 }
 .thumb-btn:hover .empty-thumb { color: var(--mint); border-color: var(--mint); }
 
@@ -359,3 +367,167 @@ input:focus, select:focus { outline: 2px solid var(--mint); outline-offset: 1px;
   resize: vertical;
 }
 .bulk:focus { outline: 2px solid var(--mint); outline-offset: 1px; }
+
+/* ---------- TCGplayer linking ---------- */
+
+.match-list { list-style: none; padding: 0; margin: 14px 0 0; }
+.match-list li { margin-bottom: 6px; }
+.match-list .ghost-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+}
+
+.linked-note {
+  font-size: 13px;
+  color: var(--mint);
+  margin: 14px 0 0;
+}
+.linked-note strong { color: var(--text); }
+
+.unlink {
+  all: unset;
+  cursor: pointer;
+  color: var(--muted);
+  text-decoration: underline;
+}
+.unlink:hover { color: var(--red); }
+
+.linked-dot {
+  color: var(--mint);
+  font-size: 9px;
+  margin-left: 6px;
+  vertical-align: middle;
+  cursor: help;
+}
+
+/* ---------- hover preview ---------- */
+
+/*
+ * Fixed positioning so the preview escapes the panel's overflow clipping.
+ * Nothing between it and the viewport has a transform, which would otherwise
+ * turn it into a containing block and reintroduce the clipping.
+ */
+.thumb-preview {
+  position: fixed;
+  z-index: 200;
+  padding: 2px;
+  background: var(--mint);
+  border: 4px solid var(--mint);
+  border-radius: 20px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.6);
+
+  /* Open while the cursor is inside it... */
+  pointer-events: auto;
+
+  /*
+   * 4x zoom: 168px preview against a 42px thumbnail, so it mounts at scale
+   * 0.25. Scale only; no fade.
+   */
+  transform: translate(-50%, -50%) scale(0.25);
+  transform-origin: center center;
+  transition: transform 240ms cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform;
+}
+
+.thumb-preview.open {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.thumb-preview img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  /* outer radius minus border minus padding: 20 - 4 - 2 */
+  border-radius: 14px;
+}
+
+.thumb-preview:not(.open) {
+  pointer-events: none;
+}
+
+.thumb:hover { border-color: var(--mint); }
+
+@media (prefers-reduced-motion: reduce) {
+  .thumb-preview { transition: none; transform: translate(-50%, -50%) scale(1); }
+}
+
+/* ---------- price history ---------- */
+
+.row-chart {
+  all: unset;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 15px;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+.row-chart:hover { color: var(--mint); background: var(--mint-dim); }
+.row-chart:focus-visible { outline: 2px solid var(--mint); }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 5, 7, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 100;
+}
+
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 22px;
+  width: 100%;
+  max-width: 720px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.modal-head h2 { margin: 0 0 4px; font-size: 18px; }
+.modal-head p { margin: 0; font-size: 13px; }
+
+.chart-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.chart-change { font-size: 13px; font-weight: 600; }
+.chart-change.pos { color: var(--mint); }
+.chart-change.neg { color: var(--red); }
+
+.chart { width: 100%; height: auto; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .axis { fill: var(--muted); font-size: 10px; font-family: var(--mono); }
+.chart .line { fill: none; stroke: var(--mint); stroke-width: 2; stroke-linejoin: round; }
+.chart .area { fill: var(--mint-dim); stroke: none; }
+.chart .dot { fill: var(--mint); cursor: help; }
+.chart .breakeven { stroke: var(--red); stroke-width: 1; stroke-dasharray: 4 4; }
+.chart .breakeven-label { fill: var(--red); }
+
+.priced-at {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+  cursor: help;
+}
+
+.saved-tick {
+  color: var(--mint);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}

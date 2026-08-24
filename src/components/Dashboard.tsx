@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { money, pct } from "@/lib/roi";
 import { BRANDS, RETAILERS, type RetailerKey } from "@/lib/retailers";
 import AddProduct from "./AddProduct";
 import EditableCell from "./EditableCell";
+import PriceHistory from "./PriceHistory";
 
 export type Bucket = "negative" | "low" | "mid" | "high" | "unknown";
 
@@ -24,6 +25,10 @@ export type Row = {
   grossRoi: number | null;
   netProfit: number | null;
   netRoi: number | null;
+  /** True when market price is fed by the nightly TCGplayer sync. */
+  linked: boolean;
+  /** When this row's price last changed. */
+  pricedAt: string;
   bucket: Bucket;
 };
 
@@ -37,17 +42,37 @@ const TILES: Array<{ key: Bucket | "all"; label: string; cls: string }> = [
   { key: "high", label: "ROI 100%+", cls: "high" },
 ];
 
+/** "3 hours ago", "2 days ago" — enough precision for daily price data. */
+function ago(iso: string | null): string {
+  if (!iso) return "never";
+  const secs = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (secs < 90) return "just now";
+  const mins = secs / 60;
+  if (mins < 60) return `${Math.round(mins)} min ago`;
+  const hours = mins / 60;
+  if (hours < 24) return `${Math.round(hours)} hour${Math.round(hours) === 1 ? "" : "s"} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+function exact(iso: string): string {
+  return new Date(iso).toLocaleString();
+}
+
 export default function Dashboard({
   retailer,
   rows,
   settings,
   canEdit,
+  lastSyncedAt,
 }: {
   retailer: RetailerKey;
   rows: Row[];
   settings: { taxRate: number; feePct: number; shippingCost: number };
   /** ADMIN only. Viewers get the same numbers, just not the pencil. */
   canEdit: boolean;
+  /** Last successful TCGplayer sync, for the freshness line. */
+  lastSyncedAt: string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -55,6 +80,10 @@ export default function Dashboard({
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "grossRoi", dir: "desc" });
   const [copied, setCopied] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [historyFor, setHistoryFor] = useState<Row | null>(null);
+  const [savedField, setSavedField] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncNote, setSyncNote] = useState<string | null>(null);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: rows.length, negative: 0, low: 0, mid: 0, high: 0 };
@@ -106,14 +135,50 @@ export default function Dashboard({
     startTransition(() => router.refresh());
   }
 
-  async function saveSettings(patch: Record<string, number>) {
-    await fetch("/api/settings", {
+  /** Pull fresh TCGplayer prices. Only refetches if TCGCSV has rebuilt. */
+  async function syncPrices() {
+    setSyncing(true);
+    setSyncNote(null);
+    const res = await fetch("/api/tcg/sync", { method: "POST" });
+    const json = await res.json();
+    setSyncing(false);
+
+    if (!res.ok) {
+      setSyncNote(json.error ?? "Sync failed.");
+      return;
+    }
+    setSyncNote(
+      json.skipped
+        ? "Already up to date — TCGCSV refreshes once a day."
+        : `Cached ${json.products} products. Updated ${json.linkedUpdated} of your SKUs.`,
+    );
+    startTransition(() => router.refresh());
+  }
+
+  /**
+   * Settings live on the user's row, so they persist across sessions, devices,
+   * and both boards. Saved on blur or Enter, with a per-field confirmation so
+   * it's obvious the value stuck.
+   */
+  async function saveSettings(field: string, patch: Record<string, number>) {
+    const res = await fetch("/api/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     });
+    if (!res.ok) {
+      setError("Couldn't save that setting.");
+      return;
+    }
+    setSavedField(field);
+    setTimeout(() => setSavedField((f) => (f === field ? null : f)), 1800);
     startTransition(() => router.refresh());
   }
+
+  /** Enter should commit too — blurring fires the same save path. */
+  const commitOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") e.currentTarget.blur();
+  };
 
   return (
     <>
@@ -138,31 +203,55 @@ export default function Dashboard({
 
       <div className="controls">
         <div className="field">
-          <label htmlFor="tax">Sales tax %</label>
+          <label htmlFor="tax">
+            Sales tax % {savedField === "tax" && <span className="saved-tick">saved</span>}
+          </label>
           <input
             id="tax" type="number" step="0.001"
             defaultValue={(settings.taxRate * 100).toFixed(3)}
-            onBlur={(e) => saveSettings({ taxRate: Number(e.target.value) / 100 })}
+            onKeyDown={commitOnEnter}
+            onBlur={(e) => saveSettings("tax", { taxRate: Number(e.target.value) / 100 })}
           />
         </div>
         <div className="field">
-          <label htmlFor="fee">Marketplace fee %</label>
+          <label htmlFor="fee">
+            Marketplace fee % {savedField === "fee" && <span className="saved-tick">saved</span>}
+          </label>
           <input
             id="fee" type="number" step="0.01"
             defaultValue={(settings.feePct * 100).toFixed(2)}
-            onBlur={(e) => saveSettings({ marketplaceFeePct: Number(e.target.value) / 100 })}
+            onKeyDown={commitOnEnter}
+            onBlur={(e) => saveSettings("fee", { marketplaceFeePct: Number(e.target.value) / 100 })}
           />
         </div>
         <div className="field">
-          <label htmlFor="ship">Ship cost per box</label>
+          <label htmlFor="ship">
+            Ship cost per box {savedField === "ship" && <span className="saved-tick">saved</span>}
+          </label>
           <input
             id="ship" type="number" step="0.01"
             defaultValue={settings.shippingCost.toFixed(2)}
-            onBlur={(e) => saveSettings({ shippingCost: Number(e.target.value) })}
+            onKeyDown={commitOnEnter}
+            onBlur={(e) => saveSettings("ship", { shippingCost: Number(e.target.value) })}
           />
         </div>
+        {canEdit && (
+          <button className="ghost-btn" style={{ width: "auto" }} onClick={syncPrices} disabled={syncing}>
+            {syncing ? "Syncing prices…" : "Sync TCGplayer prices"}
+          </button>
+        )}
         {pending && <span className="muted" style={{ fontSize: 13 }}>Saving…</span>}
       </div>
+
+      <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>
+        TCGplayer prices last synced{" "}
+        <span title={lastSyncedAt ? exact(lastSyncedAt) : "no sync has run yet"}>
+          {ago(lastSyncedAt)}
+        </span>
+        . TCGCSV rebuilds once a day.
+      </p>
+
+      {syncNote && <p className="muted" style={{ fontSize: 13 }}>{syncNote}</p>}
 
       {error && <p style={{ color: "var(--red)", fontSize: 13 }}>{error}</p>}
 
@@ -191,16 +280,12 @@ export default function Dashboard({
                   <ImageCell
                     url={r.imageUrl}
                     name={r.productName}
-                    canEdit={canEdit}
+                    canEdit={canEdit && !r.linked}
                     onSave={(v) => save(r.id, { imageUrl: v })}
                   />
                 </td>
                 <td>
-                  <EditableCell
-                    readOnly={!canEdit}
-                    value={r.productName}
-                    onSave={(v) => save(r.id, { productName: v })}
-                  />
+                  <EditableCell readOnly={!canEdit} value={r.productName} onSave={(v) => save(r.id, { productName: v })} />
                   {r.productUrl && (
                     <a className="row-link" href={r.productUrl} target="_blank" rel="noreferrer">
                       open ↗
@@ -224,28 +309,38 @@ export default function Dashboard({
                   <EditableCell readOnly={!canEdit} mono value={r.sku} onSave={(v) => save(r.id, { sku: v })} />
                 </td>
                 <td>
-                  <EditableCell
-                    readOnly={!canEdit}
-                    mono money
-                    value={r.retailPrice}
-                    onSave={(v) => save(r.id, { retailPrice: v })}
-                  />
+                  <EditableCell readOnly={!canEdit} mono money value={r.retailPrice} onSave={(v) => save(r.id, { retailPrice: v })} />
                 </td>
                 <td className="num muted">{money(r.cost)}</td>
                 <td>
                   <EditableCell
-                    readOnly={!canEdit}
-                    mono money
-                    value={r.marketPrice}
-                    placeholder={canEdit ? "add" : "—"}
+                    readOnly={!canEdit || r.linked}
+                    mono money value={r.marketPrice} placeholder={canEdit ? "add" : "—"}
                     onSave={(v) => save(r.id, { marketPrice: v })}
                   />
+                  {r.linked && (
+                    <span
+                      className="linked-dot"
+                      title={`From TCGplayer — unlink to edit by hand. Price set ${exact(r.pricedAt)}.`}
+                    >
+                      ●
+                    </span>
+                  )}
+                  <span className="priced-at" title={exact(r.pricedAt)}>{ago(r.pricedAt)}</span>
                 </td>
                 <td className={`num profit ${(r.netProfit ?? 0) >= 0 ? "pos" : "neg"}`}>
                   {money(r.netProfit)}
                 </td>
                 <td><span className={`roi-pill ${r.bucket}`}>{pct(r.grossRoi)}</span></td>
-                <td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  <button
+                    className="row-chart"
+                    onClick={() => setHistoryFor(r)}
+                    title="30-day price history"
+                    aria-label={`Price history for ${r.productName}`}
+                  >
+                    ◪
+                  </button>
                   {canEdit && (
                     <button
                       className="row-remove"
@@ -271,6 +366,103 @@ export default function Dashboard({
           </div>
         )}
       </div>
+
+      {historyFor && (
+        <PriceHistory
+          productId={historyFor.id}
+          productName={historyFor.productName}
+          cost={historyFor.cost}
+          onClose={() => setHistoryFor(null)}
+        />
+      )}
+    </>
+  );
+}
+
+/**
+ * Thumbnail with a hover preview.
+ *
+ * The preview is position:fixed and measured from the thumbnail's rect, so it
+ * escapes the table's overflow clipping entirely. It's centred on the
+ * thumbnail so the image appears to grow in place, then clamped to the viewport
+ * so rows near an edge don't push it off screen.
+ */
+function Thumb({ url, name }: { url: string; name: string }) {
+  const [box, setBox] = useState<{ top: number; left: number } | null>(null);
+  const [open, setOpen] = useState(false);
+  const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const unmountTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const SIZE = 168; // 4x the 42px thumbnail
+  const MARGIN = 8;
+
+  const clearTimers = () => {
+    if (fadeTimer.current) clearTimeout(fadeTimer.current);
+    if (unmountTimer.current) clearTimeout(unmountTimer.current);
+    fadeTimer.current = null;
+    unmountTimer.current = null;
+  };
+
+  useEffect(() => clearTimers, []);
+
+  function show(e: React.MouseEvent<HTMLImageElement>) {
+    clearTimers();
+
+    const r = e.currentTarget.getBoundingClientRect();
+
+    /*
+     * Store the thumbnail's centre point, not the preview's top-left corner.
+     * The preview's height is auto — it follows the image's aspect ratio — so
+     * subtracting SIZE / 2 vertically only centres square images and shifts
+     * everything else. CSS translate(-50%, -50%) centres on the real rendered
+     * size, whatever that turns out to be.
+     */
+    const clamp = (v: number, max: number) =>
+      Math.min(Math.max(SIZE / 2 + MARGIN, v), max - SIZE / 2 - MARGIN);
+
+    setBox({
+      top: clamp(r.top + r.height / 2, window.innerHeight),
+      left: clamp(r.left + r.width / 2, window.innerWidth),
+    });
+
+    // Mount at thumbnail scale, then flip the class on a later frame so the
+    // browser has a start value to animate from.
+    requestAnimationFrame(() => requestAnimationFrame(() => setOpen(true)));
+  }
+
+  /**
+   * Short grace period before closing. The preview sits on top of the
+   * thumbnail, so moving the cursor onto it fires mouseleave on the thumbnail —
+   * the delay gives the preview's own mouseenter time to cancel the close.
+   */
+  function scheduleHide() {
+    clearTimers();
+    fadeTimer.current = setTimeout(() => {
+      setOpen(false);
+      // Matches the 240ms CSS transition, plus a frame of slack.
+      unmountTimer.current = setTimeout(() => setBox(null), 260);
+    }, 120);
+  }
+
+  return (
+    <>
+      <img
+        className="thumb"
+        src={url}
+        alt={name}
+        onMouseEnter={show}
+        onMouseLeave={scheduleHide}
+      />
+      {box && (
+        <div
+          className={`thumb-preview ${open ? "open" : ""}`}
+          style={{ top: box.top, left: box.left, width: SIZE }}
+          onMouseEnter={clearTimers}
+          onMouseLeave={scheduleHide}
+        >
+          <img src={url} alt="" />
+        </div>
+      )}
     </>
   );
 }
@@ -290,9 +482,7 @@ function ImageCell({
   const [editing, setEditing] = useState(false);
 
   if (!canEdit) {
-    return url
-      ? <img className="thumb" src={url} alt={name} />
-      : <span className="thumb" />;
+    return url ? <Thumb url={url} name={name} /> : <span className="thumb" />;
   }
 
   if (editing) {
@@ -318,7 +508,7 @@ function ImageCell({
       onClick={() => setEditing(true)}
       title={url ? "Change image" : "Right-click the product photo → Copy image address, then paste here"}
     >
-      {url ? <img className="thumb" src={url} alt={name} /> : <span className="thumb empty-thumb">+</span>}
+      {url ? <Thumb url={url} name={name} /> : <span className="thumb empty-thumb">+</span>}
     </button>
   );
 }
