@@ -7,18 +7,19 @@ export type RetailerKey = keyof typeof RETAILERS;
 
 export const isRetailer = (v: string): v is RetailerKey => v in RETAILERS;
 
-/** Fixed list so nobody types "Pokemon " or "pokmon" and splits the data. */
+/**
+ * The only games this site tracks. Fixed list so nobody types "Pokemon " or
+ * "pokmon" and splits the data.
+ *
+ * Keep this in step with TRACKED in src/lib/tcg.ts — that's what decides which
+ * TCGplayer categories get synced, and a brand here with no matching category
+ * there would never find a market price.
+ */
 export const BRANDS = [
   "Pokemon",
   "One Piece",
   "Lorcana",
   "Magic: The Gathering",
-  "Yu-Gi-Oh!",
-  "Star Wars Unlimited",
-  "Digimon",
-  "Dragon Ball Super",
-  "Riftbound",
-  "Other",
 ] as const;
 
 export type Brand = (typeof BRANDS)[number];
@@ -94,11 +95,6 @@ export function guessBrand(name: string): Brand {
   if (n.includes("one piece")) return "One Piece";
   if (n.includes("lorcana")) return "Lorcana";
   if (n.includes("magic") || n.includes("mtg")) return "Magic: The Gathering";
-  if (n.includes("yu-gi-oh") || n.includes("yugioh")) return "Yu-Gi-Oh!";
-  if (n.includes("star wars")) return "Star Wars Unlimited";
-  if (n.includes("digimon")) return "Digimon";
-  if (n.includes("dragon ball")) return "Dragon Ball Super";
-  if (n.includes("riftbound")) return "Riftbound";
   return "Pokemon";
 }
 

@@ -22,8 +22,24 @@ const BASE = "https://tcgcsv.com/tcgplayer";
 const UA = "DropBuddy/1.0";
 const THROTTLE_MS = 120;
 
-/** Games we track. Matched case-insensitively against TCGplayer category names. */
-const TRACKED = ["pokemon", "one piece", "lorcana", "magic"];
+/**
+ * The only TCGplayer categories we sync, matched EXACTLY (case-insensitively)
+ * against the category name.
+ *
+ * Exact, not substring: TCGplayer has ~89 categories including "Pokemon Japan",
+ * which a substring match on "pokemon" would silently pull in — a whole extra
+ * catalogue of products nobody here is buying off a Target shelf.
+ *
+ * If TCGplayer renames one of these, the sync logs every category it saw and
+ * warns about the entry that matched nothing, so it fails loudly rather than
+ * quietly skipping a game. Keep in step with BRANDS in src/lib/retailers.ts.
+ */
+const TRACKED = [
+  "pokemon",
+  "one piece card game",
+  "lorcana tcg",
+  "magic",
+];
 
 /** Skip sets older than this — nobody's buying 2015 sealed off a Target shelf. */
 const YEARS_BACK = 4;
@@ -119,10 +135,18 @@ export async function syncTcgPrices(force = false): Promise<SyncResult> {
   const categories = await get<Category[]>("/categories");
   requests++;
 
-  const wanted = categories.filter((c) =>
-    TRACKED.some((t) => c.name.toLowerCase().includes(t)),
+  const wanted = categories.filter((c) => TRACKED.includes(c.name.trim().toLowerCase()));
+
+  log(`tracking ${wanted.length} of ${categories.length} categories: ${wanted.map((c) => c.name).join(", ")}`);
+
+  // Name drift would otherwise mean a game silently stops syncing.
+  const missing = TRACKED.filter(
+    (t) => !categories.some((c) => c.name.trim().toLowerCase() === t),
   );
-  log(`tracking ${wanted.length} categories: ${wanted.map((c) => c.name).join(", ")}`);
+  if (missing.length) {
+    log(`WARNING: no category matched ${missing.join(", ")}`);
+    log(`available categories: ${categories.map((c) => c.name).join(" | ")}`);
+  }
 
   const cutoff = new Date();
   cutoff.setFullYear(cutoff.getFullYear() - YEARS_BACK);
@@ -291,24 +315,84 @@ export async function applyPricesToProducts(): Promise<number> {
   return updated;
 }
 
-/** Typeahead over the local cache. No network call. */
-export async function searchTcgProducts(query: string, limit = 12) {
-  const q = query.trim();
-  if (q.length < 3) return [];
+/**
+ * Typeahead over the local cache. No network call.
+ *
+ * Matches word by word rather than as one contiguous string, because retailer
+ * wording and TCGplayer wording rarely line up — "First Partner Illustration
+ * Collection Series 2" versus "First Partner Pack Illustration Collection
+ * (Series 2)". A whole-phrase match fails on a single extra or reordered word.
+ *
+ * Tokens like "pokemon" and "tcg" are treated as optional: they help rank a
+ * result but never exclude one, since TCGplayer usually leaves them out of the
+ * product name.
+ */
+const OPTIONAL_TOKENS = new Set([
+  "pokemon", "pokémon", "tcg", "ccg", "card", "cards", "game", "the", "of",
+  "and", "a", "an", "trading", "mtg", "magic", "lorcana", "disney",
+]);
 
-  return prisma.tcgProduct.findMany({
-    where: { name: { contains: q, mode: "insensitive" } },
-    orderBy: [{ marketPrice: "desc" }],
-    take: limit,
-    select: {
-      productId: true,
-      name: true,
-      categoryId: true,
-      categoryName: true,
-      groupId: true,
-      groupName: true,
-      marketPrice: true,
-      imageUrl: true,
-    },
+function tokenize(input: string): string[] {
+  return input
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+export async function searchTcgProducts(query: string, limit = 20) {
+  const tokens = tokenize(query);
+  if (tokens.length === 0) return [];
+
+  const required = tokens.filter((t) => !OPTIONAL_TOKENS.has(t));
+  const terms = required.length ? required : tokens;
+
+  const select = {
+    productId: true,
+    name: true,
+    categoryId: true,
+    categoryName: true,
+    groupId: true,
+    groupName: true,
+    marketPrice: true,
+    imageUrl: true,
+  } as const;
+
+  // Every meaningful word must appear somewhere in the name, in any order.
+  let rows = await prisma.tcgProduct.findMany({
+    where: { AND: terms.map((t) => ({ name: { contains: t, mode: "insensitive" as const } })) },
+    take: 200,
+    select,
   });
+
+  // Nothing matched everything — fall back to any word, so a typo in one word
+  // doesn't leave the user staring at an empty list.
+  if (rows.length === 0) {
+    rows = await prisma.tcgProduct.findMany({
+      where: { OR: terms.map((t) => ({ name: { contains: t, mode: "insensitive" as const } })) },
+      take: 200,
+      select,
+    });
+  }
+
+  const wanted = new Set(tokens);
+
+  const scored = rows.map((r) => {
+    const nameTokens = tokenize(r.name);
+    const nameSet = new Set(nameTokens);
+    const hits = [...wanted].filter((t) => nameSet.has(t)).length;
+
+    return {
+      row: r,
+      // more matched words wins; among equals, prefer the tighter name, then
+      // the pricier product (sealed boxes over single packs of the same set)
+      score:
+        hits * 1000 -
+        Math.abs(nameTokens.length - tokens.length) * 10 +
+        (r.marketPrice ? Math.min(Number(r.marketPrice), 200) / 100 : 0),
+    };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit).map((s) => s.row);
 }

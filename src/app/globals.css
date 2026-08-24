@@ -28,6 +28,14 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
+/*
+ * Everything renders 10% larger. `zoom` rather than a font-size bump, because
+ * the layout uses fixed pixel values that font scaling wouldn't touch.
+ */
+body {
+  zoom: 1.1;
+}
+
 a { color: inherit; text-decoration: none; }
 
 /* ---------- shell ---------- */
@@ -175,12 +183,24 @@ h1.title .accent.WALMART { color: #6cb0ff; }
  */
 .thumb {
   width: 42px; height: 42px;
-  /* 20px preview radius x 0.25 mount scale = 5px, so the corners are the same
-     shape at both sizes and stay matched through the animation. */
-  border-radius: 5px;
+  border-radius: 6px;
   object-fit: cover;
   background: var(--surface-2);
   border: 2px solid var(--mint);
+
+  /* Subtle lift on hover. Small enough (42px -> 50px) that it stays inside the
+     cell padding, so no clipping and no fixed-position workaround needed. */
+  transform-origin: center center;
+  transition: transform 160ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.thumb-btn:hover .thumb,
+td > .thumb:hover {
+  transform: scale(1.2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thumb { transition: none; }
 }
 
 .roi-pill {
@@ -402,58 +422,6 @@ input:focus, select:focus { outline: 2px solid var(--mint); outline-offset: 1px;
   cursor: help;
 }
 
-/* ---------- hover preview ---------- */
-
-/*
- * Fixed positioning so the preview escapes the panel's overflow clipping.
- * Nothing between it and the viewport has a transform, which would otherwise
- * turn it into a containing block and reintroduce the clipping.
- */
-.thumb-preview {
-  position: fixed;
-  z-index: 200;
-  padding: 2px;
-  background: var(--mint);
-  border: 4px solid var(--mint);
-  border-radius: 20px;
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.6);
-
-  /* Open while the cursor is inside it... */
-  pointer-events: auto;
-
-  /*
-   * 4x zoom: 168px preview against a 42px thumbnail, so it mounts at scale
-   * 0.25. Scale only; no fade.
-   */
-  transform: translate(-50%, -50%) scale(0.25);
-  transform-origin: center center;
-  transition: transform 240ms cubic-bezier(0.4, 0, 0.2, 1);
-  will-change: transform;
-}
-
-.thumb-preview.open {
-  transform: translate(-50%, -50%) scale(1);
-}
-
-.thumb-preview img {
-  display: block;
-  width: 100%;
-  aspect-ratio: 1 / 1;
-  object-fit: cover;
-  /* outer radius minus border minus padding: 20 - 4 - 2 */
-  border-radius: 14px;
-}
-
-.thumb-preview:not(.open) {
-  pointer-events: none;
-}
-
-.thumb:hover { border-color: var(--mint); }
-
-@media (prefers-reduced-motion: reduce) {
-  .thumb-preview { transition: none; transform: translate(-50%, -50%) scale(1); }
-}
-
 /* ---------- price history ---------- */
 
 .row-chart {
@@ -531,3 +499,138 @@ input:focus, select:focus { outline: 2px solid var(--mint); outline-offset: 1px;
   font-weight: 600;
   letter-spacing: 0.04em;
 }
+
+/* ---------- product name as a detail trigger ---------- */
+
+.name-link {
+  all: unset;
+  cursor: pointer;
+  font-size: 14px;
+}
+/* Colour change only — no box. The row highlight already signals hover. */
+.name-link:hover { color: var(--mint); }
+.name-link:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
+
+/* ---------- detail card ---------- */
+
+.modal.detail { max-width: 760px; }
+
+.detail-title { display: flex; gap: 16px; align-items: flex-start; }
+
+.detail-photo {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 2px solid var(--mint);
+  background: var(--surface-2);
+  flex-shrink: 0;
+}
+
+.detail-title h2 { margin: 0 0 6px; font-size: 18px; }
+.detail-title p { margin: 0 0 6px; font-size: 12px; }
+
+.detail-link { font-size: 12px; color: var(--muted); }
+.detail-link:hover { color: var(--mint); }
+
+.detail-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.stat {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--bg);
+}
+.stat-label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.stat-value { font-size: 16px; font-weight: 600; }
+.stat-value.tone-pos, .stat-value.tone-high { color: var(--mint); }
+.stat-value.tone-mid { color: var(--gold); }
+.stat-value.tone-low { color: var(--amber); }
+.stat-value.tone-neg, .stat-value.tone-negative { color: var(--red); }
+.stat-value.tone-unknown { color: var(--muted); }
+
+.detail-section {
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+/* ---------- row selection ---------- */
+
+.pick-col { width: 34px; padding-right: 0 !important; }
+
+/*
+ * The browser default is a bright white box, which shouts on a near-black page.
+ * appearance: none strips it back so we can draw a dark box with a mint check.
+ */
+.pick-col input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  min-width: 0;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface-2);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.pick-col input[type="checkbox"]:hover { border-color: var(--muted); }
+
+.pick-col input[type="checkbox"]:checked {
+  background: var(--mint);
+  border-color: var(--mint);
+}
+
+/* the tick */
+.pick-col input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 3px;
+  height: 7px;
+  border: solid #05130e;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.pick-col input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 2px;
+}
+
+tbody tr.picked { background: var(--mint-dim); }
+tbody tr.picked:hover { background: rgba(52, 229, 176, 0.16); }
+
+.select-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  border: 1px solid var(--mint);
+  border-radius: 10px;
+  background: var(--mint-dim);
+  font-size: 13px;
+}
+.select-bar strong { color: var(--mint); font-size: 15px; }

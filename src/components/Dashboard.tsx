@@ -6,7 +6,7 @@ import { money, pct } from "@/lib/roi";
 import { BRANDS, RETAILERS, type RetailerKey } from "@/lib/retailers";
 import AddProduct from "./AddProduct";
 import EditableCell from "./EditableCell";
-import PriceHistory from "./PriceHistory";
+import ProductDetail from "./ProductDetail";
 
 export type Bucket = "negative" | "low" | "mid" | "high" | "unknown";
 
@@ -80,7 +80,9 @@ export default function Dashboard({
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "grossRoi", dir: "desc" });
   const [copied, setCopied] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [historyFor, setHistoryFor] = useState<Row | null>(null);
+  const [detailFor, setDetailFor] = useState<Row | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const lastClicked = useRef<number | null>(null);
   const [savedField, setSavedField] = useState<string | null>(null);
   const [zipNote, setZipNote] = useState<string | null>(null);
   const [taxValue, setTaxValue] = useState((settings.taxRate * 100).toFixed(3));
@@ -104,6 +106,51 @@ export default function Dashboard({
       return dir === "asc" ? cmp : -cmp;
     });
   }, [rows, filter, sort]);
+
+  /**
+   * Row selection for copying. Shift-click extends from the last click, so you
+   * can grab a run of rows without clicking each one.
+   */
+  function toggleRow(index: number, id: string, shift: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+
+      if (shift && lastClicked.current !== null) {
+        const [from, to] = [lastClicked.current, index].sort((a, b) => a - b);
+        const turningOn = !prev.has(id);
+        for (let i = from; i <= to; i++) {
+          const rowId = visible[i]?.id;
+          if (!rowId) continue;
+          if (turningOn) next.add(rowId);
+          else next.delete(rowId);
+        }
+      } else {
+        next.has(id) ? next.delete(id) : next.add(id);
+      }
+
+      return next;
+    });
+    lastClicked.current = index;
+  }
+
+  const allVisibleSelected = visible.length > 0 && visible.every((r) => selected.has(r.id));
+
+  function toggleAllVisible() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) visible.forEach((r) => next.delete(r.id));
+      else visible.forEach((r) => next.add(r.id));
+      return next;
+    });
+    lastClicked.current = null;
+  }
+
+  function copySelected() {
+    const skus = rows.filter((r) => selected.has(r.id)).map((r) => r.sku);
+    navigator.clipboard.writeText(skus.join("\n"));
+    setCopied("selected");
+    setTimeout(() => setCopied(null), 1600);
+  }
 
   function copySkus(bucket: Bucket | "all") {
     const list = bucket === "all" ? rows : rows.filter((r) => r.bucket === bucket);
@@ -268,17 +315,6 @@ export default function Dashboard({
             onBlur={(e) => saveSettings("fee", { marketplaceFeePct: Number(e.target.value) / 100 })}
           />
         </div>
-        <div className="field">
-          <label htmlFor="ship">
-            Ship cost per box {savedField === "ship" && <span className="saved-tick">saved</span>}
-          </label>
-          <input
-            id="ship" type="number" step="0.01"
-            defaultValue={settings.shippingCost.toFixed(2)}
-            onKeyDown={commitOnEnter}
-            onBlur={(e) => saveSettings("ship", { shippingCost: Number(e.target.value) })}
-          />
-        </div>
         {canEdit && (
           <button className="ghost-btn" style={{ width: "auto" }} onClick={syncPrices} disabled={syncing}>
             {syncing ? "Syncing prices…" : "Sync TCGplayer prices"}
@@ -301,10 +337,32 @@ export default function Dashboard({
 
       {error && <p style={{ color: "var(--red)", fontSize: 13 }}>{error}</p>}
 
+      {selected.size > 0 && (
+        <div className="select-bar">
+          <span>
+            <strong className="num">{selected.size}</strong> selected
+          </span>
+          <button className="primary-btn" style={{ padding: "7px 14px" }} onClick={copySelected}>
+            {copied === "selected" ? "Copied" : "Copy selected SKUs"}
+          </button>
+          <button className="ghost-btn" style={{ width: "auto" }} onClick={() => setSelected(new Set())}>
+            Clear
+          </button>
+        </div>
+      )}
+
       <div className="panel">
         <table>
           <thead>
             <tr>
+              <th className="pick-col">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  onChange={toggleAllVisible}
+                  aria-label="Select all visible SKUs"
+                />
+              </th>
               <th />
               <th onClick={() => toggleSort("productName")}>Product</th>
               <th className="hide-sm">Brand</th>
@@ -320,8 +378,17 @@ export default function Dashboard({
             </tr>
           </thead>
           <tbody>
-            {visible.map((r) => (
-              <tr key={r.id}>
+            {visible.map((r, i) => (
+              <tr key={r.id} className={selected.has(r.id) ? "picked" : ""}>
+                <td className="pick-col">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(r.id)}
+                    onChange={() => {}}
+                    onClick={(e) => toggleRow(i, r.id, e.shiftKey)}
+                    aria-label={`Select ${r.productName}`}
+                  />
+                </td>
                 <td>
                   <ImageCell
                     url={r.imageUrl}
@@ -331,20 +398,23 @@ export default function Dashboard({
                   />
                 </td>
                 <td>
-                  <EditableCell readOnly={!canEdit} value={r.productName} onSave={(v) => save(r.id, { productName: v })} />
-                  {r.productUrl && (
-                    <a className="row-link" href={r.productUrl} target="_blank" rel="noreferrer">
-                      open ↗
-                    </a>
-                  )}
+                  <button className="name-link" onClick={() => setDetailFor(r)}>
+                    {r.productName}
+                  </button>
                 </td>
                 <td className="hide-sm">
                   {canEdit ? (
                     <select
                       className="cell-brand"
-                      value={(BRANDS as readonly string[]).includes(r.brand) ? r.brand : "Other"}
+                      value={r.brand}
                       onChange={(e) => save(r.id, { brand: e.target.value })}
                     >
+                      {/* A row saved under an old brand keeps showing it until
+                          someone picks a current one, rather than silently
+                          displaying the wrong game. */}
+                      {!(BRANDS as readonly string[]).includes(r.brand) && (
+                        <option value={r.brand} disabled>{r.brand} (retired)</option>
+                      )}
                       {BRANDS.map((b) => <option key={b} value={b}>{b}</option>)}
                     </select>
                   ) : (
@@ -379,14 +449,6 @@ export default function Dashboard({
                 </td>
                 <td><span className={`roi-pill ${r.bucket}`}>{pct(r.grossRoi)}</span></td>
                 <td style={{ whiteSpace: "nowrap" }}>
-                  <button
-                    className="row-chart"
-                    onClick={() => setHistoryFor(r)}
-                    title="30-day price history"
-                    aria-label={`Price history for ${r.productName}`}
-                  >
-                    ◪
-                  </button>
                   {canEdit && (
                     <button
                       className="row-remove"
@@ -413,101 +475,14 @@ export default function Dashboard({
         )}
       </div>
 
-      {historyFor && (
-        <PriceHistory
-          productId={historyFor.id}
-          productName={historyFor.productName}
-          cost={historyFor.cost}
-          onClose={() => setHistoryFor(null)}
+      {detailFor && (
+        <ProductDetail
+          row={detailFor}
+          retailer={retailer}
+          canEdit={canEdit}
+          onSave={save}
+          onClose={() => setDetailFor(null)}
         />
-      )}
-    </>
-  );
-}
-
-/**
- * Thumbnail with a hover preview.
- *
- * The preview is position:fixed and measured from the thumbnail's rect, so it
- * escapes the table's overflow clipping entirely. It's centred on the
- * thumbnail so the image appears to grow in place, then clamped to the viewport
- * so rows near an edge don't push it off screen.
- */
-function Thumb({ url, name }: { url: string; name: string }) {
-  const [box, setBox] = useState<{ top: number; left: number } | null>(null);
-  const [open, setOpen] = useState(false);
-  const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const unmountTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const SIZE = 168; // 4x the 42px thumbnail
-  const MARGIN = 8;
-
-  const clearTimers = () => {
-    if (fadeTimer.current) clearTimeout(fadeTimer.current);
-    if (unmountTimer.current) clearTimeout(unmountTimer.current);
-    fadeTimer.current = null;
-    unmountTimer.current = null;
-  };
-
-  useEffect(() => clearTimers, []);
-
-  function show(e: React.MouseEvent<HTMLImageElement>) {
-    clearTimers();
-
-    const r = e.currentTarget.getBoundingClientRect();
-
-    /*
-     * Store the thumbnail's centre point, not the preview's top-left corner.
-     * The preview's height is auto — it follows the image's aspect ratio — so
-     * subtracting SIZE / 2 vertically only centres square images and shifts
-     * everything else. CSS translate(-50%, -50%) centres on the real rendered
-     * size, whatever that turns out to be.
-     */
-    const clamp = (v: number, max: number) =>
-      Math.min(Math.max(SIZE / 2 + MARGIN, v), max - SIZE / 2 - MARGIN);
-
-    setBox({
-      top: clamp(r.top + r.height / 2, window.innerHeight),
-      left: clamp(r.left + r.width / 2, window.innerWidth),
-    });
-
-    // Mount at thumbnail scale, then flip the class on a later frame so the
-    // browser has a start value to animate from.
-    requestAnimationFrame(() => requestAnimationFrame(() => setOpen(true)));
-  }
-
-  /**
-   * Short grace period before closing. The preview sits on top of the
-   * thumbnail, so moving the cursor onto it fires mouseleave on the thumbnail —
-   * the delay gives the preview's own mouseenter time to cancel the close.
-   */
-  function scheduleHide() {
-    clearTimers();
-    fadeTimer.current = setTimeout(() => {
-      setOpen(false);
-      // Matches the 240ms CSS transition, plus a frame of slack.
-      unmountTimer.current = setTimeout(() => setBox(null), 260);
-    }, 120);
-  }
-
-  return (
-    <>
-      <img
-        className="thumb"
-        src={url}
-        alt={name}
-        onMouseEnter={show}
-        onMouseLeave={scheduleHide}
-      />
-      {box && (
-        <div
-          className={`thumb-preview ${open ? "open" : ""}`}
-          style={{ top: box.top, left: box.left, width: SIZE }}
-          onMouseEnter={clearTimers}
-          onMouseLeave={scheduleHide}
-        >
-          <img src={url} alt="" />
-        </div>
       )}
     </>
   );
@@ -528,7 +503,7 @@ function ImageCell({
   const [editing, setEditing] = useState(false);
 
   if (!canEdit) {
-    return url ? <Thumb url={url} name={name} /> : <span className="thumb" />;
+    return url ? <img className="thumb" src={url} alt={name} /> : <span className="thumb" />;
   }
 
   if (editing) {
@@ -554,7 +529,7 @@ function ImageCell({
       onClick={() => setEditing(true)}
       title={url ? "Change image" : "Right-click the product photo → Copy image address, then paste here"}
     >
-      {url ? <Thumb url={url} name={name} /> : <span className="thumb empty-thumb">+</span>}
+      {url ? <img className="thumb" src={url} alt={name} /> : <span className="thumb empty-thumb">+</span>}
     </button>
   );
 }
