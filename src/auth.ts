@@ -13,17 +13,26 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: { signIn: "/login", error: "/login" },
   providers: [
     Discord({
+      // guilds.members.read lets us check server roles without a bot token
       authorization:
         "https://discord.com/api/oauth2/authorize?scope=identify+guilds.members.read",
     }),
   ],
   callbacks: {
+    /**
+     * The gate. Three ways in, checked in order:
+     *   1. Discord ID is in ADMIN_DISCORD_IDS  -> admin
+     *   2. Discord ID is in the Whitelist table -> member
+     *   3. User is in your guild with a required role -> member
+     * Anyone else is bounced to /login?error=AccessDenied.
+     */
     async signIn({ profile, account }) {
       const discordId = profile?.id as string | undefined;
       if (!discordId) return false;
 
       const isAdmin = adminIds.includes(discordId);
-      const onList = !!(await prisma.whitelist.findUnique({ where: { discordId } }));
+      const onList =
+        !!(await prisma.whitelist.findUnique({ where: { discordId } }));
       const viaGuild = isAdmin || onList
         ? false
         : await checkGuildAccess(discordId, account?.access_token);
@@ -46,8 +55,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         update: {
           username: (profile?.username as string) ?? "unknown",
           avatarUrl,
-          // Only ever promote from the env list, never demote — otherwise
-          // someone you promoted in the database is wiped on next sign-in.
+          // Only ever promote from the env list. Without this, someone you
+          // promoted to ADMIN in the database gets silently demoted the next
+          // time they sign in.
           ...(isAdmin && { role: "ADMIN" as const }),
           lastLoginAt: new Date(),
         },

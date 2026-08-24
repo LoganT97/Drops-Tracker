@@ -87,8 +87,9 @@ export default async function RetailerBoard({ retailer }: { retailer: RetailerKe
         <Dashboard
           retailer={retailer}
           rows={rows}
-          settings={{ taxRate, feePct, shippingCost }}
+          settings={{ taxRate, feePct, shippingCost, postalCode: user?.postalCode ?? "" }}
           canEdit={session.user.role === "ADMIN"}
+          lastSyncedAt={syncState?.lastSyncedAt?.toISOString() ?? null}
         />
       </main>
     </>

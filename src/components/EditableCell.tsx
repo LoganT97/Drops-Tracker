@@ -5,9 +5,6 @@ import { useEffect, useRef, useState } from "react";
 /**
  * Click the value, type, press Enter or click away to save. Escape cancels.
  * Reverts to the old value if the save is rejected.
- *
- * With readOnly, renders the value as plain text — no hover target, no click.
- * Viewers (MEMBER role) get this; editors (ADMIN) get the interactive version.
  */
 export default function EditableCell({
   value,
@@ -21,6 +18,7 @@ export default function EditableCell({
   onSave: (v: string | number | null) => Promise<boolean> | boolean;
   mono?: boolean;
   money?: boolean;
+  /** Viewers see the value as plain text with no hover or click target. */
   readOnly?: boolean;
   placeholder?: string;
 }) {

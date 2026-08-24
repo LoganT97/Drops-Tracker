@@ -68,7 +68,7 @@ export default function Dashboard({
 }: {
   retailer: RetailerKey;
   rows: Row[];
-  settings: { taxRate: number; feePct: number; shippingCost: number };
+  settings: { taxRate: number; feePct: number; shippingCost: number; postalCode: string };
   /** ADMIN only. Viewers get the same numbers, just not the pencil. */
   canEdit: boolean;
   /** Last successful TCGplayer sync, for the freshness line. */
@@ -82,6 +82,8 @@ export default function Dashboard({
   const [error, setError] = useState<string | null>(null);
   const [historyFor, setHistoryFor] = useState<Row | null>(null);
   const [savedField, setSavedField] = useState<string | null>(null);
+  const [zipNote, setZipNote] = useState<string | null>(null);
+  const [taxValue, setTaxValue] = useState((settings.taxRate * 100).toFixed(3));
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState<string | null>(null);
 
@@ -175,6 +177,34 @@ export default function Dashboard({
     startTransition(() => router.refresh());
   }
 
+  /**
+   * Look a tax rate up from a ZIP or Canadian postal code and fill the tax
+   * field in. It's a convenience, not a lock — the rate stays editable, because
+   * ZIP boundaries and tax boundaries don't line up and the dataset will
+   * occasionally be wrong for a specific store.
+   */
+  async function lookupZip(code: string) {
+    setZipNote(null);
+    await saveSettings("zip", { postalCode: code } as never);
+
+    if (!code.trim()) return;
+
+    const res = await fetch(`/api/tax-rate?code=${encodeURIComponent(code)}`);
+    if (!res.ok) {
+      setZipNote((await res.json()).error ?? "Couldn't find that code.");
+      return;
+    }
+
+    const found = await res.json();
+    setTaxValue((found.rate * 100).toFixed(3));
+    await saveSettings("tax", { taxRate: found.rate });
+    setZipNote(
+      found.unusual
+        ? `${found.label} — ${(found.rate * 100).toFixed(3)}%. That's unusually high (special district); check against your receipt.`
+        : `${found.label} — ${(found.rate * 100).toFixed(3)}%`,
+    );
+  }
+
   /** Enter should commit too — blurring fires the same save path. */
   const commitOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") e.currentTarget.blur();
@@ -203,12 +233,26 @@ export default function Dashboard({
 
       <div className="controls">
         <div className="field">
+          <label htmlFor="zip">
+            ZIP / postal code {savedField === "zip" && <span className="saved-tick">saved</span>}
+          </label>
+          <input
+            id="zip"
+            style={{ minWidth: 110 }}
+            placeholder="60601 or M5V"
+            defaultValue={settings.postalCode}
+            onKeyDown={commitOnEnter}
+            onBlur={(e) => lookupZip(e.target.value)}
+          />
+        </div>
+        <div className="field">
           <label htmlFor="tax">
             Sales tax % {savedField === "tax" && <span className="saved-tick">saved</span>}
           </label>
           <input
             id="tax" type="number" step="0.001"
-            defaultValue={(settings.taxRate * 100).toFixed(3)}
+            value={taxValue}
+            onChange={(e) => setTaxValue(e.target.value)}
             onKeyDown={commitOnEnter}
             onBlur={(e) => saveSettings("tax", { taxRate: Number(e.target.value) / 100 })}
           />
@@ -242,6 +286,8 @@ export default function Dashboard({
         )}
         {pending && <span className="muted" style={{ fontSize: 13 }}>Saving…</span>}
       </div>
+
+      {zipNote && <p className="muted" style={{ fontSize: 12 }}>{zipNote}</p>}
 
       <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>
         TCGplayer prices last synced{" "}

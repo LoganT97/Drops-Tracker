@@ -7,7 +7,7 @@ export async function PATCH(req: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Sign in first" }, { status: 401 });
 
-  const { taxRate, marketplaceFeePct, shippingCost } = await req.json();
+  const { taxRate, marketplaceFeePct, shippingCost, postalCode } = await req.json();
 
   const user = await prisma.user.update({
     where: { id: session.user.id },
@@ -15,8 +15,9 @@ export async function PATCH(req: Request) {
       ...(taxRate !== undefined && { taxRate }),
       ...(marketplaceFeePct !== undefined && { marketplaceFeePct }),
       ...(shippingCost !== undefined && { shippingCost }),
+      ...(postalCode !== undefined && { postalCode: postalCode || null }),
     },
-    select: { taxRate: true, marketplaceFeePct: true, shippingCost: true },
+    select: { taxRate: true, marketplaceFeePct: true, shippingCost: true, postalCode: true },
   });
 
   return NextResponse.json(user);
