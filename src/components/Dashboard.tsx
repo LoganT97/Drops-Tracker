@@ -41,10 +41,13 @@ export default function Dashboard({
   retailer,
   rows,
   settings,
+  canEdit,
 }: {
   retailer: RetailerKey;
   rows: Row[];
   settings: { taxRate: number; feePct: number; shippingCost: number };
+  /** ADMIN only. Viewers get the same numbers, just not the pencil. */
+  canEdit: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -114,7 +117,7 @@ export default function Dashboard({
 
   return (
     <>
-      <AddProduct retailer={retailer} />
+      {canEdit && <AddProduct retailer={retailer} />}
 
       <div className="tiles">
         {TILES.map((t) => (
@@ -188,11 +191,16 @@ export default function Dashboard({
                   <ImageCell
                     url={r.imageUrl}
                     name={r.productName}
+                    canEdit={canEdit}
                     onSave={(v) => save(r.id, { imageUrl: v })}
                   />
                 </td>
                 <td>
-                  <EditableCell value={r.productName} onSave={(v) => save(r.id, { productName: v })} />
+                  <EditableCell
+                    readOnly={!canEdit}
+                    value={r.productName}
+                    onSave={(v) => save(r.id, { productName: v })}
+                  />
                   {r.productUrl && (
                     <a className="row-link" href={r.productUrl} target="_blank" rel="noreferrer">
                       open ↗
@@ -200,24 +208,36 @@ export default function Dashboard({
                   )}
                 </td>
                 <td className="hide-sm">
-                  <select
-                    className="cell-brand"
-                    value={(BRANDS as readonly string[]).includes(r.brand) ? r.brand : "Other"}
-                    onChange={(e) => save(r.id, { brand: e.target.value })}
-                  >
-                    {BRANDS.map((b) => <option key={b} value={b}>{b}</option>)}
-                  </select>
+                  {canEdit ? (
+                    <select
+                      className="cell-brand"
+                      value={(BRANDS as readonly string[]).includes(r.brand) ? r.brand : "Other"}
+                      onChange={(e) => save(r.id, { brand: e.target.value })}
+                    >
+                      {BRANDS.map((b) => <option key={b} value={b}>{b}</option>)}
+                    </select>
+                  ) : (
+                    <span className="muted">{r.brand}</span>
+                  )}
                 </td>
                 <td className="hide-sm">
-                  <EditableCell mono value={r.sku} onSave={(v) => save(r.id, { sku: v })} />
+                  <EditableCell readOnly={!canEdit} mono value={r.sku} onSave={(v) => save(r.id, { sku: v })} />
                 </td>
                 <td>
-                  <EditableCell mono money value={r.retailPrice} onSave={(v) => save(r.id, { retailPrice: v })} />
+                  <EditableCell
+                    readOnly={!canEdit}
+                    mono money
+                    value={r.retailPrice}
+                    onSave={(v) => save(r.id, { retailPrice: v })}
+                  />
                 </td>
                 <td className="num muted">{money(r.cost)}</td>
                 <td>
                   <EditableCell
-                    mono money value={r.marketPrice} placeholder="add"
+                    readOnly={!canEdit}
+                    mono money
+                    value={r.marketPrice}
+                    placeholder={canEdit ? "add" : "—"}
                     onSave={(v) => save(r.id, { marketPrice: v })}
                   />
                 </td>
@@ -226,13 +246,15 @@ export default function Dashboard({
                 </td>
                 <td><span className={`roi-pill ${r.bucket}`}>{pct(r.grossRoi)}</span></td>
                 <td>
-                  <button
-                    className="row-remove"
-                    onClick={() => remove(r.id, r.productName)}
-                    aria-label={`Stop tracking ${r.productName}`}
-                  >
-                    ×
-                  </button>
+                  {canEdit && (
+                    <button
+                      className="row-remove"
+                      onClick={() => remove(r.id, r.productName)}
+                      aria-label={`Stop tracking ${r.productName}`}
+                    >
+                      ×
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -242,7 +264,9 @@ export default function Dashboard({
         {visible.length === 0 && (
           <div className="empty">
             {rows.length === 0
-              ? `No ${RETAILERS[retailer].label} SKUs yet. Paste a product link above to add your first.`
+              ? canEdit
+                ? `No ${RETAILERS[retailer].label} SKUs yet. Paste a product link above to add your first.`
+                : `No ${RETAILERS[retailer].label} SKUs are being tracked yet.`
               : "No SKUs in this ROI range."}
           </div>
         )}
@@ -255,13 +279,21 @@ export default function Dashboard({
 function ImageCell({
   url,
   name,
+  canEdit,
   onSave,
 }: {
   url: string | null;
   name: string;
+  canEdit: boolean;
   onSave: (v: string | null) => Promise<boolean>;
 }) {
   const [editing, setEditing] = useState(false);
+
+  if (!canEdit) {
+    return url
+      ? <img className="thumb" src={url} alt={name} />
+      : <span className="thumb" />;
+  }
 
   if (editing) {
     return (

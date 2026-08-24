@@ -5,18 +5,23 @@ import { useEffect, useRef, useState } from "react";
 /**
  * Click the value, type, press Enter or click away to save. Escape cancels.
  * Reverts to the old value if the save is rejected.
+ *
+ * With readOnly, renders the value as plain text — no hover target, no click.
+ * Viewers (MEMBER role) get this; editors (ADMIN) get the interactive version.
  */
 export default function EditableCell({
   value,
   onSave,
   mono = false,
   money = false,
+  readOnly = false,
   placeholder = "—",
 }: {
   value: string | number | null;
   onSave: (v: string | number | null) => Promise<boolean> | boolean;
   mono?: boolean;
   money?: boolean;
+  readOnly?: boolean;
   placeholder?: string;
 }) {
   const [editing, setEditing] = useState(false);
@@ -34,6 +39,17 @@ export default function EditableCell({
     const next = money ? (draft.trim() === "" ? null : Number(draft)) : draft.trim();
     const ok = await onSave(next);
     if (!ok) setDraft(original);
+  }
+
+  const display =
+    value == null || value === ""
+      ? placeholder
+      : money
+        ? `$${Number(value).toFixed(2)}`
+        : String(value);
+
+  if (readOnly) {
+    return <span className={mono ? "num" : undefined}>{display}</span>;
   }
 
   if (editing) {
@@ -56,13 +72,6 @@ export default function EditableCell({
       />
     );
   }
-
-  const display =
-    value == null || value === ""
-      ? placeholder
-      : money
-        ? `$${Number(value).toFixed(2)}`
-        : String(value);
 
   return (
     <button

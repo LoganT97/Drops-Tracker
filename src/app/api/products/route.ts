@@ -20,6 +20,10 @@ export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Sign in first" }, { status: 401 });
 
+  if (session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Only editors can add SKUs." }, { status: 403 });
+  }
+
   const body = await req.json();
   const rows = Array.isArray(body.rows) ? body.rows : [body];
   const saved = [];

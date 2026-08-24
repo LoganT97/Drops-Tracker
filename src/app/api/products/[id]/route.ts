@@ -7,6 +7,9 @@ import { BRANDS } from "@/lib/retailers";
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Sign in first" }, { status: 401 });
+  if (session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Only editors can change SKUs." }, { status: 403 });
+  }
 
   const { id } = await params;
   const body = await req.json();
@@ -22,6 +25,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
     data.brand = body.brand;
   }
+
   for (const field of ["retailPrice", "marketPrice"]) {
     if (body[field] !== undefined) {
       const n = Number(body[field]);
@@ -43,6 +47,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Sign in first" }, { status: 401 });
+  if (session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Only editors can remove SKUs." }, { status: 403 });
+  }
 
   const { id } = await params;
   await prisma.product.update({ where: { id }, data: { active: false } });
