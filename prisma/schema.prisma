@@ -1,0 +1,75 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Auth ----------
+
+model User {
+  id          String    @id @default(cuid())
+  discordId   String    @unique
+  username    String
+  avatarUrl   String?
+  role        Role      @default(MEMBER)
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  // ROI settings — each person's own state and selling costs
+  taxRate           Decimal @default(0.0) @db.Decimal(6, 5) // 0.0825 = 8.25%
+  marketplaceFeePct Decimal @default(0.0) @db.Decimal(6, 5) // 0.1275 = 12.75%
+  shippingCost      Decimal @default(0.0) @db.Decimal(10, 2)
+
+  products Product[] @relation("ProductCreatedBy")
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+/// Pre-approve people before they ever log in. Matched on Discord ID.
+model Whitelist {
+  id        String   @id @default(cuid())
+  discordId String   @unique
+  note      String?
+  createdAt DateTime @default(now())
+}
+
+// ---------- Catalog ----------
+
+enum Retailer {
+  TARGET
+  WALMART
+}
+
+/// Everything here is typed in by a member. No scraping, no API keys.
+model Product {
+  id          String   @id @default(cuid())
+  retailer    Retailer @default(TARGET)
+  /// Target TCIN, Walmart item ID, or whatever you use to find it
+  sku         String
+  productName String
+  brand       String   @default("Pokemon")
+  imageUrl    String?
+  productUrl  String?
+
+  retailPrice Decimal  @db.Decimal(10, 2)
+  marketPrice Decimal? @db.Decimal(10, 2)
+  notes       String?
+
+  active      Boolean  @default(true)
+  /// Bumped whenever someone edits a price, so the table can show staleness
+  pricedAt    DateTime @default(now())
+
+  createdById String?
+  createdBy   User?    @relation("ProductCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([retailer, sku])
+  @@index([active])
+}

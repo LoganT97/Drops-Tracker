@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Drop Buddy — design preview</title>
+  <!-- The real stylesheet. Edit src/app/globals.css and refresh to see changes. -->
+  <link rel="stylesheet" href="src/app/globals.css" />
+  <style>
+    .preview-note {
+      max-width: 1360px; margin: 0 auto; padding: 14px 28px 0;
+      color: var(--muted); font-size: 12px;
+    }
+    .preview-note code { color: var(--mint); }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div style="display:flex;align-items:center;gap:24px">
+      <div class="wordmark">Drop Buddy</div>
+      <nav class="store-nav"><a class="on" href="#">Target</a><a href="#">Walmart</a></nav>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <span class="muted" style="font-size:13px">yourname</span>
+      <button class="ghost-btn" style="width:auto">Log out</button>
+    </div>
+  </header>
+
+  <p class="preview-note">
+    Static preview — sample data, nothing clickable. Run <code>npm run dev</code> for the real thing.
+  </p>
+
+  <main class="page">
+    <h1 class="title"><span class="accent TARGET">Target</span> SKUs, pricing, and potential ROI</h1>
+    <p class="subtitle">Paste a Target product link to fill in the SKU and name, or type it in. Click any value in the table to edit it.</p>
+
+    <!-- add panel -->
+    <div class="panel" style="padding:18px;margin-bottom:24px">
+      <div class="tabs">
+        <button class="tab on">Add one</button>
+        <button class="tab">Paste a list</button>
+      </div>
+      <div class="field" style="margin-bottom:14px">
+        <label>Paste a Target product link</label>
+        <input class="link-input" placeholder="https://www.target.com/p/product-name/-/A-95225595" />
+      </div>
+      <div class="controls" style="margin-bottom:0">
+        <div class="field"><label>TCIN</label><input placeholder="95225595" /></div>
+        <div class="field" style="flex:1;min-width:240px">
+          <label>Product</label>
+          <input placeholder="Prismatic Evolutions Elite Trainer Box" />
+        </div>
+        <div class="field"><label>Brand</label><select><option>Pokemon</option><option>One Piece</option><option>Lorcana</option><option>Magic: The Gathering</option></select></div>
+        <div class="field"><label>Retail $</label><input style="min-width:100px" placeholder="59.99" /></div>
+        <div class="field"><label>Market $</label><input style="min-width:100px" placeholder="optional" /></div>
+        <button class="primary-btn">Add SKU</button>
+      </div>
+    </div>
+
+    <!-- tiles -->
+    <div class="tiles">
+      <div class="tile all"><div class="label">All SKUs</div><div class="count">61</div><button class="ghost-btn">Copy all SKUs</button></div>
+      <div class="tile negative"><div class="label">ROI below 0%</div><div class="count">6</div><button class="ghost-btn">Copy all SKUs</button></div>
+      <div class="tile low"><div class="label">ROI 0–50%</div><div class="count">16</div><button class="ghost-btn">Copy all SKUs</button></div>
+      <div class="tile mid"><div class="label">ROI 50–99%</div><div class="count">15</div><button class="ghost-btn">Copy all SKUs</button></div>
+      <div class="tile high"><div class="label">ROI 100%+</div><div class="count">24</div><button class="ghost-btn">Copy all SKUs</button></div>
+    </div>
+
+    <!-- settings -->
+    <div class="controls">
+      <div class="field"><label>Sales tax %</label><input value="8.250" /></div>
+      <div class="field"><label>Marketplace fee %</label><input value="0.00" /></div>
+      <div class="field"><label>Ship cost per box</label><input value="0.00" /></div>
+    </div>
+
+    <!-- table -->
+    <div class="panel">
+      <table>
+        <thead>
+          <tr>
+            <th></th><th>Product</th><th class="hide-sm">Brand</th><th class="hide-sm">TCIN</th>
+            <th>Retail</th><th>Retail (+tax)</th><th>Market value</th><th>Profit / box</th>
+            <th>Potential ROI ▼</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><button class="thumb-btn"><span class="thumb"></span></button></td>
+            <td><span class="cell-view">First Partners Illustration Collection</span><a class="row-link" href="#">open ↗</a></td>
+            <td class="hide-sm"><select class="cell-brand"><option selected>Pokemon</option><option>One Piece</option><option>Lorcana</option><option>Magic: The Gathering</option><option>Yu-Gi-Oh!</option></select></td>
+            <td class="hide-sm"><span class="cell-view num">95225595</span></td>
+            <td><span class="cell-view num">$15.99</span></td>
+            <td class="num muted">$17.31</td>
+            <td><span class="cell-view num">$60.75</span></td>
+            <td class="num profit pos">$43.44</td>
+            <td><span class="roi-pill high">250.9%</span></td>
+            <td><button class="row-remove">×</button></td>
+          </tr>
+          <tr>
+            <td><button class="thumb-btn"><span class="thumb"></span></button></td>
+            <td><span class="cell-view">Ascended Heroes Elite Trainer Box</span><a class="row-link" href="#">open ↗</a></td>
+            <td class="hide-sm"><select class="cell-brand"><option selected>Pokemon</option><option>One Piece</option><option>Lorcana</option><option>Magic: The Gathering</option><option>Yu-Gi-Oh!</option></select></td>
+            <td class="hide-sm"><span class="cell-view num">95082118</span></td>
+            <td><span class="cell-view num">$59.99</span></td>
+            <td class="num muted">$64.94</td>
+            <td><span class="cell-view num">$167.51</span></td>
+            <td class="num profit pos">$102.57</td>
+            <td><span class="roi-pill high">157.9%</span></td>
+            <td><button class="row-remove">×</button></td>
+          </tr>
+          <tr>
+            <td><button class="thumb-btn"><span class="thumb"></span></button></td>
+            <td><span class="cell-view">30th Celebration Booster Bundle</span><a class="row-link" href="#">open ↗</a></td>
+            <td class="hide-sm"><select class="cell-brand"><option selected>Pokemon</option><option>One Piece</option><option>Lorcana</option><option>Magic: The Gathering</option><option>Yu-Gi-Oh!</option></select></td>
+            <td class="hide-sm"><span class="cell-view num">1011407490</span></td>
+            <td><span class="cell-view num">$31.99</span></td>
+            <td class="num muted">$34.63</td>
+            <td><span class="cell-view num">$89.96</span></td>
+            <td class="num profit pos">$55.33</td>
+            <td><span class="roi-pill high">159.8%</span></td>
+            <td><button class="row-remove">×</button></td>
+          </tr>
+          <tr>
+            <td><button class="thumb-btn"><span class="thumb"></span></button></td>
+            <td><span class="cell-view">One Piece Royal Blood Booster Box</span><a class="row-link" href="#">open ↗</a></td>
+            <td class="hide-sm"><select class="cell-brand"><option>Pokemon</option><option selected>One Piece</option><option>Lorcana</option><option>Magic: The Gathering</option><option>Yu-Gi-Oh!</option></select></td>
+            <td class="hide-sm"><span class="cell-view num">94776123</span></td>
+            <td><span class="cell-view num">$71.99</span></td>
+            <td class="num muted">$77.93</td>
+            <td><span class="cell-view num">$104.40</span></td>
+            <td class="num profit pos">$26.47</td>
+            <td><span class="roi-pill low">34.0%</span></td>
+            <td><button class="row-remove">×</button></td>
+          </tr>
+          <tr>
+            <td><button class="thumb-btn"><span class="thumb empty-thumb">+</span></button></td>
+            <td><span class="cell-view">Lorcana Azurite Sea Illumineer's Trove</span><a class="row-link" href="#">open ↗</a></td>
+            <td class="hide-sm"><select class="cell-brand"><option>Pokemon</option><option>One Piece</option><option selected>Lorcana</option><option>Magic: The Gathering</option><option>Yu-Gi-Oh!</option></select></td>
+            <td class="hide-sm"><span class="cell-view num">94301188</span></td>
+            <td><span class="cell-view num">$49.99</span></td>
+            <td class="num muted">$54.11</td>
+            <td><span class="cell-view muted">—</span></td>
+            <td class="num profit pos">—</td>
+            <td><span class="roi-pill unknown">—</span></td>
+            <td><button class="row-remove">×</button></td>
+          </tr>
+          <tr>
+            <td><button class="thumb-btn"><span class="thumb"></span></button></td>
+            <td><span class="cell-view">Phantasmal Flames Booster Bundle</span><a class="row-link" href="#">open ↗</a></td>
+            <td class="hide-sm"><select class="cell-brand"><option selected>Pokemon</option><option>One Piece</option><option>Lorcana</option><option>Magic: The Gathering</option><option>Yu-Gi-Oh!</option></select></td>
+            <td class="hide-sm"><span class="cell-view num">94860231</span></td>
+            <td><span class="cell-view num">$31.99</span></td>
+            <td class="num muted">$34.63</td>
+            <td><span class="cell-view num">$27.40</span></td>
+            <td class="num profit neg">-$7.23</td>
+            <td><span class="roi-pill negative">-20.9%</span></td>
+            <td><button class="row-remove">×</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</body>
+</html>

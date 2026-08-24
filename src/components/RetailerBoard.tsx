@@ -1,0 +1,91 @@
+import { redirect } from "next/navigation";
+import Link from "next/link";
+import { auth, signOut } from "@/auth";
+import { prisma } from "@/lib/db";
+import { computeRoi, roiBucket } from "@/lib/roi";
+import { RETAILERS, type RetailerKey } from "@/lib/retailers";
+import Dashboard, { type Row } from "@/components/Dashboard";
+
+/**
+ * One board per retailer. Target and Walmart never share a list — separate
+ * URLs, separate counts, separate copy-SKU buttons.
+ */
+export default async function RetailerBoard({ retailer }: { retailer: RetailerKey }) {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+
+  const [user, products] = await Promise.all([
+    prisma.user.findUnique({ where: { id: session.user.id } }),
+    prisma.product.findMany({
+      where: { active: true, retailer },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+
+  const taxRate = Number(user?.taxRate ?? 0);
+  const feePct = Number(user?.marketplaceFeePct ?? 0);
+  const shippingCost = Number(user?.shippingCost ?? 0);
+
+  const rows: Row[] = products.map((p) => {
+    const retailPrice = Number(p.retailPrice);
+    const marketPrice = p.marketPrice != null ? Number(p.marketPrice) : null;
+    const roi = computeRoi({ retailPrice, marketPrice, taxRate, feePct, shippingCost });
+
+    return {
+      id: p.id,
+      sku: p.sku,
+      productName: p.productName,
+      brand: p.brand,
+      imageUrl: p.imageUrl,
+      productUrl: p.productUrl,
+      notes: p.notes,
+      retailPrice,
+      marketPrice,
+      ...roi,
+      bucket: roiBucket(roi.grossRoi),
+    };
+  });
+
+  const meta = RETAILERS[retailer];
+
+  return (
+    <>
+      <header className="topbar">
+        <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+          <div className="wordmark">Drop Buddy</div>
+          <nav className="store-nav">
+            <Link className={retailer === "TARGET" ? "on" : ""} href="/target">Target</Link>
+            <Link className={retailer === "WALMART" ? "on" : ""} href="/walmart">Walmart</Link>
+          </nav>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <span className="muted" style={{ fontSize: 13 }}>{session.user.name}</span>
+          <form
+            action={async () => {
+              "use server";
+              await signOut({ redirectTo: "/login" });
+            }}
+          >
+            <button className="ghost-btn" style={{ width: "auto" }} type="submit">Log out</button>
+          </form>
+        </div>
+      </header>
+
+      <main className="page">
+        <h1 className="title">
+          <span className={`accent ${retailer}`}>{meta.label}</span> SKUs, pricing, and potential ROI
+        </h1>
+        <p className="subtitle">
+          Paste a {meta.label} product link to fill in the SKU and name, or type it in. Click any
+          value in the table to edit it.
+        </p>
+
+        <Dashboard
+          retailer={retailer}
+          rows={rows}
+          settings={{ taxRate, feePct, shippingCost }}
+        />
+      </main>
+    </>
+  );
+}
