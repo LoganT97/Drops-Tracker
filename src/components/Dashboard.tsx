@@ -8,6 +8,7 @@ import AddProduct from "./AddProduct";
 import EditableCell from "./EditableCell";
 import ProductDetail from "./ProductDetail";
 import AuditHistory from "./AuditHistory";
+import ActiveUsers from "./ActiveUsers";
 
 export type Bucket = "negative" | "low" | "mid" | "high" | "unknown";
 type SyncProgress = {
@@ -119,6 +120,7 @@ export default function Dashboard({
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [auditOpen, setAuditOpen] = useState(false);
+  const [usersOpen, setUsersOpen] = useState(false);
 
   useEffect(() => {
     if (!canEdit) return;
@@ -403,6 +405,9 @@ export default function Dashboard({
             </div>
             <button className="ghost-btn audit-history-button" onClick={() => setAuditOpen(true)}>
               Audit History
+            </button>
+            <button className="ghost-btn active-users-button" onClick={() => setUsersOpen(true)}>
+              Active Users
             </button>
             <button className="ghost-btn admin-sync-button" onClick={syncPrices} disabled={syncing}>
               {syncing ? "Syncing prices…" : "Scan TCGplayer prices"}
@@ -772,6 +777,7 @@ export default function Dashboard({
         />
       )}
       {auditOpen && <AuditHistory onClose={() => setAuditOpen(false)} />}
+      {usersOpen && <ActiveUsers onClose={() => setUsersOpen(false)} />}
     </>
   );
 }
