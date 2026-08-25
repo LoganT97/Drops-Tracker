@@ -14,12 +14,22 @@ import ActivityHeartbeat from "@/components/ActivityHeartbeat";
 export default async function RetailerBoard({ retailer }: { retailer: RetailerKey }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
+  const historySince = new Date();
+  historySince.setUTCDate(historySince.getUTCDate() - 30);
+  historySince.setUTCHours(0, 0, 0, 0);
 
   const [user, products, syncState] = await Promise.all([
     prisma.user.findUnique({ where: { id: session.user.id } }),
     prisma.product.findMany({
       where: { active: true, retailer },
       orderBy: { createdAt: "desc" },
+      include: {
+        snapshots: {
+          where: { capturedOn: { gte: historySince } },
+          orderBy: { capturedOn: "asc" },
+          select: { capturedOn: true, marketPrice: true, retailPrice: true },
+        },
+      },
     }),
     prisma.syncState.findUnique({ where: { id: "tcgcsv" } }),
   ]);
@@ -43,6 +53,11 @@ export default async function RetailerBoard({ retailer }: { retailer: RetailerKe
       notes: p.notes,
       prerelease: p.prerelease,
       releaseDate: p.releaseDate?.toISOString().slice(0, 10) ?? null,
+      history: p.snapshots.map((snapshot) => ({
+        date: snapshot.capturedOn.toISOString().slice(0, 10),
+        marketPrice: snapshot.marketPrice != null ? Number(snapshot.marketPrice) : null,
+        retailPrice: snapshot.retailPrice != null ? Number(snapshot.retailPrice) : null,
+      })),
       retailPrice,
       marketPrice,
       linked: p.tcgProductId != null,

@@ -17,6 +17,10 @@ git pull
 echo "==> Installing dependencies"
 npm install
 
+# npm can preserve the bundled 7za binary without its executable bit on some
+# Linux hosts. Historical-price backfills need to launch it directly.
+chmod +x node_modules/7zip-bin/linux/*/7za 2>/dev/null || true
+
 echo "==> Applying schema"
 npx prisma db push
 

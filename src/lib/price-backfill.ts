@@ -1,5 +1,5 @@
 import { createWriteStream } from "node:fs";
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -77,7 +77,11 @@ export async function backfillPriceHistory(productId: string | null, days = 30) 
       await pipeline(Readable.fromWeb(response.body as never), createWriteStream(archivePath));
       updatePriceBackfill({ stage: `Extracting tracked products for ${day}…` });
       const archiveTargets = paths.map((path) => `${day}/${path}`);
-      await exec(sevenZipPath(), ["x", archivePath, `-o${extractPath}`, "-y", "-bso0", "-bsp0", ...archiveTargets], {
+      const extractor = sevenZipPath();
+      if (process.platform !== "win32" && extractor !== "7za") {
+        await chmod(extractor, 0o755);
+      }
+      await exec(extractor, ["x", archivePath, `-o${extractPath}`, "-y", "-bso0", "-bsp0", ...archiveTargets], {
         windowsHide: true,
         maxBuffer: 1024 * 1024,
       });

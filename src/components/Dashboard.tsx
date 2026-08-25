@@ -38,6 +38,7 @@ export type Row = {
   notes: string | null;
   prerelease: boolean;
   releaseDate: string | null;
+  history: Array<{ date: string; marketPrice: number | null; retailPrice: number | null }>;
   retailPrice: number | null;
   marketPrice: number | null;
   cost: number | null;
@@ -134,7 +135,7 @@ export default function Dashboard({
   const [backfillNote, setBackfillNote] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!canEdit) return;
+    if (!canEdit || !syncing) return;
     let cancelled = false;
     const poll = async () => {
       try {
@@ -142,23 +143,16 @@ export default function Dashboard({
         if (!response.ok) return;
         const progress: SyncProgress = await response.json();
         if (cancelled) return;
-        if (progress.active || syncProgress?.active) setSyncProgress(progress);
-        if (progress.active) setSyncing(true);
-        else if (syncProgress?.active) setSyncing(false);
-      } catch {
-        // A transient status failure should not interrupt the actual sync.
-      }
+        setSyncProgress(progress);
+        if (!progress.active) setSyncing(false);
+      } catch {}
     };
-    void poll();
     const timer = window.setInterval(() => void poll(), 1000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [canEdit, syncProgress?.active]);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [canEdit, syncing]);
 
   useEffect(() => {
-    if (!canEdit) return;
+    if (!canEdit || !backfilling) return;
     let cancelled = false;
     const poll = async () => {
       try {
@@ -166,16 +160,13 @@ export default function Dashboard({
         if (!response.ok) return;
         const progress: BackfillProgress = await response.json();
         if (cancelled) return;
-        if (progress.active || backfillProgress?.active) setBackfillProgress(progress);
-        setBackfilling(progress.active);
-      } catch {
-        // The long-running POST still reports the final result.
-      }
+        setBackfillProgress(progress);
+        if (!progress.active) setBackfilling(false);
+      } catch {}
     };
-    void poll();
     const timer = window.setInterval(() => void poll(), 1000);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [canEdit, backfillProgress?.active]);
+  }, [canEdit, backfilling]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: rows.length, negative: 0, low: 0, mid: 0, high: 0 };

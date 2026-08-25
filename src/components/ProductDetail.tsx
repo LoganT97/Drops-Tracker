@@ -33,7 +33,7 @@ export default function ProductDetail({
   onSave: (id: string, patch: Record<string, unknown>) => Promise<boolean>;
   onClose: () => void;
 }) {
-  const [points, setPoints] = useState<Point[] | null>(null);
+  const [points, setPoints] = useState<Point[]>(row.history);
   const [error, setError] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState(row.productName);
   const [prerelease, setPrerelease] = useState(row.prerelease);
@@ -44,6 +44,7 @@ export default function ProductDetail({
   const [backfillNote, setBackfillNote] = useState<string | null>(null);
 
   useEffect(() => {
+    if (historyVersion === 0) return;
     let cancelled = false;
     fetch(`/api/products/${row.id}/history?days=30`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("Couldn't load history."))))
@@ -58,7 +59,7 @@ export default function ProductDetail({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const priced = (points ?? []).filter((p) => p.marketPrice != null);
+  const priced = points.filter((p) => p.marketPrice != null);
   const meta = RETAILERS[retailer];
 
   async function saveName(value: string | number | null) {
@@ -211,9 +212,7 @@ export default function ProductDetail({
         )}
 
         {error && <p style={{ color: "var(--red)" }}>{error}</p>}
-        {!points && !error && <p className="muted">Loading…</p>}
-
-        {points && priced.length === 0 && (
+        {priced.length === 0 && (
           <p className="muted">
             No history yet. A point is recorded each time prices sync or the market value is edited,
             so the chart fills in from here.
@@ -227,7 +226,7 @@ export default function ProductDetail({
           </p>
         )}
 
-        {priced.length > 1 && <Chart points={priced} cost={row.cost} />}
+        {priced.length > 1 && <Chart points={priced} cost={row.cost} releaseDate={releaseDate || null} />}
 
       </div>
     </div>
@@ -247,7 +246,7 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: str
  * Plain SVG rather than a charting library — this is one line and three axis
  * labels, and a dependency would cost more than it saves.
  */
-function Chart({ points, cost }: { points: Point[]; cost: number | null }) {
+function Chart({ points, cost, releaseDate }: { points: Point[]; cost: number | null; releaseDate: string | null }) {
   const W = 640, H = 240;
   const pad = { top: 18, right: 16, bottom: 30, left: 52 };
   const innerW = W - pad.left - pad.right;
@@ -262,9 +261,21 @@ function Chart({ points, cost }: { points: Point[]; cost: number | null }) {
   min = Math.max(0, min - span * 0.15);
   max = max + span * 0.15;
 
-  const x = (i: number) =>
-    pad.left + (points.length === 1 ? innerW / 2 : (i / (points.length - 1)) * innerW);
+  const dateValues = points.map((point) => new Date(`${point.date}T00:00:00Z`).getTime());
+  const firstDate = dateValues[0];
+  const lastDate = dateValues[dateValues.length - 1];
+  const dateSpan = lastDate - firstDate || 1;
+  const x = (i: number) => pad.left + ((dateValues[i] - firstDate) / dateSpan) * innerW;
   const y = (v: number) => pad.top + innerH - ((v - min) / (max - min)) * innerH;
+
+  const releaseTime = releaseDate ? new Date(`${releaseDate}T00:00:00Z`).getTime() : NaN;
+  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const showRelease = Number.isFinite(releaseTime)
+    && releaseTime >= thirtyDaysAgo
+    && releaseTime <= Date.now()
+    && releaseTime >= firstDate
+    && releaseTime <= lastDate;
+  const releaseX = showRelease ? pad.left + ((releaseTime - firstDate) / dateSpan) * innerW : 0;
 
   const line = points
     .map((p, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(p.marketPrice as number)}`)
@@ -305,6 +316,15 @@ function Chart({ points, cost }: { points: Point[]; cost: number | null }) {
 
         <path d={area} className="area" />
         <path d={line} className="line" />
+
+        {showRelease && (
+          <>
+            <line x1={releaseX} x2={releaseX} y1={pad.top} y2={pad.top + innerH} className="release-marker" />
+            <text x={releaseX + 5} y={pad.top + 12} className="axis release-label">
+              release {releaseDate?.slice(5)}
+            </text>
+          </>
+        )}
 
         {points.map((p, i) => (
           <circle key={p.date} cx={x(i)} cy={y(p.marketPrice as number)} r={3} className="dot">

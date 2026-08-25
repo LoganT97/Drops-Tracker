@@ -989,6 +989,8 @@ input:focus, select:focus { outline: 2px solid var(--mint); outline-offset: 1px;
 .chart .dot { fill: var(--mint); cursor: help; }
 .chart .breakeven { stroke: var(--red); stroke-width: 1; stroke-dasharray: 4 4; }
 .chart .breakeven-label { fill: var(--red); }
+.chart .release-marker { stroke: var(--amber); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.chart .release-label { fill: var(--amber); font-weight: 700; }
 
 .priced-at {
   display: block;
