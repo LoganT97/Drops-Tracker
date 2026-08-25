@@ -35,6 +35,7 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
   const [matches, setMatches] = useState<TcgMatch[]>([]);
   const [linked, setLinked] = useState<TcgMatch | null>(null);
   const [searching, setSearching] = useState(false);
+  const [lookingUp, setLookingUp] = useState(false);
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -43,7 +44,7 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
    * No network call, so it can't be rate-limited or blocked — but the name
    * comes from the URL slug, so give it a once-over before saving.
    */
-  function handleLink(value: string) {
+  async function handleLink(value: string) {
     const parsed = parseProductUrl(value);
     if (!parsed.sku && !parsed.productName) {
       setHint(value.trim() ? `That doesn't look like a ${meta.label} product link.` : null);
@@ -61,7 +62,40 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
       productUrl: parsed.productUrl ?? f.productUrl,
       brand: parsed.productName ? guessBrand(parsed.productName) : f.brand,
     }));
-    setHint("Filled in from the link — check the name, then add the price.");
+    if (parsed.retailer !== "TARGET") {
+      setHint("Filled in from the link - check the name, then add the price.");
+      return;
+    }
+    setLookingUp(true);
+    setHint("Looking up the current Target details...");
+    try {
+      const res = await fetch("/api/retailers/target/lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: value }),
+      });
+      const details = await res.json();
+      if (!res.ok) {
+        setHint(details.error ?? "Target details were unavailable; fill in the price manually.");
+        return;
+      }
+      setForm((f) => ({
+        ...f,
+        sku: details.sku ?? f.sku,
+        productName: details.name ?? f.productName,
+        retailPrice: details.retailPrice != null ? String(details.retailPrice) : f.retailPrice,
+        imageUrl: details.imageUrl ?? f.imageUrl,
+        productUrl: details.productUrl ?? f.productUrl,
+        brand: details.name ? guessBrand(details.name) : f.brand,
+      }));
+      setHint(details.retailPrice != null
+        ? "Filled in the name, current retail price, and product image from Target."
+        : "Filled in Target's product details, but no retail price was available.");
+    } catch {
+      setHint("Target details were unavailable; the link fields were still filled in.");
+    } finally {
+      setLookingUp(false);
+    }
   }
 
   /** Search the local TCGplayer cache so market price can update itself nightly. */
@@ -187,8 +221,9 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
                   ? "https://www.target.com/p/product-name/-/A-95225595"
                   : "https://www.walmart.com/ip/Product-Name/1012055702"
               }
-              onChange={(e) => handleLink(e.target.value)}
+              onChange={(e) => void handleLink(e.target.value)}
             />
+            {lookingUp && <span className="muted" style={{ fontSize: 12 }}>Contacting Target...</span>}
             {hint && <span className="muted" style={{ fontSize: 12 }}>{hint}</span>}
           </div>
 

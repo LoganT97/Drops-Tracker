@@ -55,7 +55,7 @@ export default async function RetailerBoard({ retailer }: { retailer: RetailerKe
     <>
       <header className="topbar">
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-          <div className="wordmark">Drop Buddy</div>
+          <div className="wordmark">Drops Tracker</div>
           <nav className="store-nav">
             <Link className={retailer === "TARGET" ? "on" : ""} href="/target">Target</Link>
             <Link className={retailer === "WALMART" ? "on" : ""} href="/walmart">Walmart</Link>

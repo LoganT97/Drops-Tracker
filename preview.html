@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Drop Buddy — design preview</title>
+  <title>Drops Tracker — design preview</title>
   <!-- The real stylesheet. Edit src/app/globals.css and refresh to see changes. -->
   <link rel="stylesheet" href="src/app/globals.css" />
   <style>
@@ -17,7 +17,7 @@
 <body>
   <header class="topbar">
     <div style="display:flex;align-items:center;gap:24px">
-      <div class="wordmark">Drop Buddy</div>
+      <div class="wordmark">Drops Tracker</div>
       <nav class="store-nav"><a class="on" href="#">Target</a><a href="#">Walmart</a></nav>
     </div>
     <div style="display:flex;align-items:center;gap:14px">
@@ -54,6 +54,25 @@
         <div class="field"><label>Retail $</label><input style="min-width:100px" placeholder="59.99" /></div>
         <div class="field"><label>Market $</label><input style="min-width:100px" placeholder="optional" /></div>
         <button class="primary-btn">Add SKU</button>
+      </div>
+    </div>
+
+    <!-- SKU list filters -->
+    <div class="sku-filters">
+      <div class="sku-filters-head">
+        <h2>Customize SKU List</h2>
+        <button class="clear-filters-link">Clear all filters</button>
+      </div>
+      <div class="filter-group-label">Brand</div>
+      <div class="brand-pills">
+        <button class="brand-pill on">Pokemon</button>
+        <button class="brand-pill">One Piece</button>
+        <button class="brand-pill">Lorcana</button>
+        <button class="brand-pill">Magic: The Gathering</button>
+      </div>
+      <div class="sku-filters-actions">
+        <button class="primary-btn">Create SKU List (61)</button>
+        <button class="ghost-btn" style="width:auto">Create SKU List from Selected (2)</button>
       </div>
     </div>
 

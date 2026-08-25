@@ -12,7 +12,7 @@ export default async function Login({
 
   return (
     <main className="page" style={{ maxWidth: 420, paddingTop: 120 }}>
-      <div className="wordmark" style={{ marginBottom: 20 }}>Drop Buddy</div>
+      <div className="wordmark" style={{ marginBottom: 20 }}>Drops Tracker</div>
       <h1 className="title">Members only</h1>
       <p className="subtitle">
         Sign in with Discord. Access is limited to approved members of the server.

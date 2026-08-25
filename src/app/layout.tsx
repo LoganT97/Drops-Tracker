@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Drop Buddy",
+  title: "Drops Tracker",
   description: "Track Target and Walmart TCG drops, market value, and ROI.",
 };
 

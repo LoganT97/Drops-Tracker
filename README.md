@@ -1,4 +1,4 @@
-# Drop Buddy
+# Drops Tracker
 
 Private SKU boards for Target and Walmart TCG drops, one page per store. You type in the product, the retail price, and
 what it's going for; the app handles tax, ROI, and profit per box. Sign-in is Discord-only and gated

@@ -56,7 +56,7 @@ export function parseProductUrl(input: string): {
   const host = url.hostname.replace(/^www\./, "");
   const path = url.pathname;
 
-  if (host.endsWith("target.com")) {
+  if (host === "target.com" || host.endsWith(".target.com")) {
     // /p/<slug>/-/A-<tcin>
     const tcin = path.match(/\/A-(\d+)/i)?.[1];
     const slug = path.match(/\/p\/([^/]+)/)?.[1];
@@ -68,7 +68,7 @@ export function parseProductUrl(input: string): {
     };
   }
 
-  if (host.endsWith("walmart.com")) {
+  if (host === "walmart.com" || host.endsWith(".walmart.com")) {
     // /ip/<slug>/<itemId>  (slug is sometimes missing)
     const parts = path.split("/").filter(Boolean);
     const ipIndex = parts.indexOf("ip");

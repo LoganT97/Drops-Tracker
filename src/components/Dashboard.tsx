@@ -32,7 +32,7 @@ export type Row = {
   bucket: Bucket;
 };
 
-type SortKey = "productName" | "retailPrice" | "cost" | "marketPrice" | "grossRoi" | "netProfit";
+type SortKey = "productName" | "sku" | "retailPrice" | "cost" | "marketPrice" | "grossRoi" | "netProfit";
 
 const TILES: Array<{ key: Bucket | "all"; label: string; cls: string }> = [
   { key: "all", label: "All SKUs", cls: "all" },
@@ -82,6 +82,7 @@ export default function Dashboard({
   const [error, setError] = useState<string | null>(null);
   const [detailFor, setDetailFor] = useState<Row | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectedBrands, setSelectedBrands] = useState<Set<string>>(new Set());
   const lastClicked = useRef<number | null>(null);
   const [savedField, setSavedField] = useState<string | null>(null);
   const [zipNote, setZipNote] = useState<string | null>(null);
@@ -96,16 +97,38 @@ export default function Dashboard({
   }, [rows]);
 
   const visible = useMemo(() => {
-    const list = filter === "all" ? [...rows] : rows.filter((r) => r.bucket === filter);
+    let list = filter === "all" ? [...rows] : rows.filter((r) => r.bucket === filter);
+    if (selectedBrands.size > 0) list = list.filter((r) => selectedBrands.has(r.brand));
     const { key, dir } = sort;
     return list.sort((a, b) => {
       const av = a[key], bv = b[key];
       if (av == null) return 1;
       if (bv == null) return -1;
-      const cmp = typeof av === "string" ? av.localeCompare(bv as string) : (av as number) - (bv as number);
+      const cmp = typeof av === "string"
+        ? av.localeCompare(bv as string, undefined, { numeric: true, sensitivity: "base" })
+        : (av as number) - (bv as number);
       return dir === "asc" ? cmp : -cmp;
     });
-  }, [rows, filter, sort]);
+  }, [rows, filter, sort, selectedBrands]);
+
+  function toggleBrand(brand: string) {
+    setSelectedBrands((prev) => {
+      const next = new Set(prev);
+      next.has(brand) ? next.delete(brand) : next.add(brand);
+      return next;
+    });
+  }
+
+  function clearFilters() {
+    setFilter("all");
+    setSelectedBrands(new Set());
+  }
+
+  function copyFilteredSkus() {
+    navigator.clipboard.writeText(visible.map((r) => r.sku).join("\n"));
+    setCopied("filtered");
+    setTimeout(() => setCopied(null), 1600);
+  }
 
   /**
    * Row selection for copying. Shift-click extends from the last click, so you
@@ -161,6 +184,14 @@ export default function Dashboard({
 
   function toggleSort(key: SortKey) {
     setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "desc" }));
+  }
+
+  function sortIndicator(key: SortKey) {
+    return (
+      <span className={`sort-indicator ${sort.key === key ? "active" : ""}`} aria-hidden="true">
+        {sort.key === key ? (sort.dir === "desc" ? "▼" : "▲") : "↕"}
+      </span>
+    );
   }
 
   async function save(id: string, patch: Record<string, unknown>) {
@@ -261,6 +292,40 @@ export default function Dashboard({
     <>
       {canEdit && <AddProduct retailer={retailer} />}
 
+      <div className="sku-filters">
+        <div className="sku-filters-head">
+          <h2>Customize SKU List</h2>
+          <button className="clear-filters-link" onClick={clearFilters}>Clear all filters</button>
+        </div>
+
+        <div className="filter-group-label">Brand</div>
+        <div className="brand-pills">
+          {BRANDS.map((b) => (
+            <button
+              key={b}
+              className={`brand-pill ${selectedBrands.has(b) ? "on" : ""}`}
+              onClick={() => toggleBrand(b)}
+            >
+              {b}
+            </button>
+          ))}
+        </div>
+
+        <div className="sku-filters-actions">
+          <button className="primary-btn" onClick={copyFilteredSkus}>
+            {copied === "filtered" ? "Copied" : `Create SKU List (${visible.length})`}
+          </button>
+          <button
+            className="ghost-btn"
+            style={{ width: "auto" }}
+            onClick={copySelected}
+            disabled={selected.size === 0}
+          >
+            {copied === "selected" ? "Copied" : `Create SKU List from Selected (${selected.size})`}
+          </button>
+        </div>
+      </div>
+
       <div className="tiles">
         {TILES.map((t) => (
           <div key={t.key} className={`tile ${t.cls}`} aria-pressed={filter === t.key}>
@@ -337,20 +402,6 @@ export default function Dashboard({
 
       {error && <p style={{ color: "var(--red)", fontSize: 13 }}>{error}</p>}
 
-      {selected.size > 0 && (
-        <div className="select-bar">
-          <span>
-            <strong className="num">{selected.size}</strong> selected
-          </span>
-          <button className="primary-btn" style={{ padding: "7px 14px" }} onClick={copySelected}>
-            {copied === "selected" ? "Copied" : "Copy selected SKUs"}
-          </button>
-          <button className="ghost-btn" style={{ width: "auto" }} onClick={() => setSelected(new Set())}>
-            Clear
-          </button>
-        </div>
-      )}
-
       <div className="panel">
         <table>
           <thead>
@@ -364,15 +415,27 @@ export default function Dashboard({
                 />
               </th>
               <th />
-              <th onClick={() => toggleSort("productName")}>Product</th>
+              <th aria-sort={sort.key === "productName" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("productName")}>
+                Product {sortIndicator("productName")}
+              </th>
               <th className="hide-sm">Brand</th>
-              <th className="hide-sm">{RETAILERS[retailer].skuLabel}</th>
-              <th onClick={() => toggleSort("retailPrice")}>Retail</th>
-              <th onClick={() => toggleSort("cost")}>Retail (+tax)</th>
-              <th onClick={() => toggleSort("marketPrice")}>Market value</th>
-              <th onClick={() => toggleSort("netProfit")}>Profit / box</th>
-              <th onClick={() => toggleSort("grossRoi")}>
-                Potential ROI {sort.key === "grossRoi" ? (sort.dir === "desc" ? "▼" : "▲") : ""}
+              <th className="hide-sm" aria-sort={sort.key === "sku" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("sku")}>
+                {RETAILERS[retailer].skuLabel} {sortIndicator("sku")}
+              </th>
+              <th aria-sort={sort.key === "retailPrice" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("retailPrice")}>
+                Retail {sortIndicator("retailPrice")}
+              </th>
+              <th aria-sort={sort.key === "cost" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("cost")}>
+                Retail (+tax) {sortIndicator("cost")}
+              </th>
+              <th aria-sort={sort.key === "marketPrice" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("marketPrice")}>
+                Market value {sortIndicator("marketPrice")}
+              </th>
+              <th aria-sort={sort.key === "netProfit" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("netProfit")}>
+                Profit / box {sortIndicator("netProfit")}
+              </th>
+              <th aria-sort={sort.key === "grossRoi" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("grossRoi")}>
+                Potential ROI {sortIndicator("grossRoi")}
               </th>
               <th />
             </tr>
