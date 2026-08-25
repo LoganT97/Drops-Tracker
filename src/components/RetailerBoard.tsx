@@ -40,6 +40,7 @@ export default async function RetailerBoard({ retailer }: { retailer: RetailerKe
       imageUrl: p.imageUrl,
       productUrl: p.productUrl,
       notes: p.notes,
+      prerelease: p.prerelease,
       retailPrice,
       marketPrice,
       linked: p.tcgProductId != null,

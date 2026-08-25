@@ -70,6 +70,7 @@ export async function POST(req: Request) {
       imageUrl: row.imageUrl?.trim() || null,
       productUrl: row.productUrl?.trim() || null,
       notes: row.notes?.trim() || null,
+      prerelease: row.prerelease === true || String(row.prerelease ?? "").toLowerCase() === "true",
       tcgProductId: Number.isInteger(row.tcgProductId) ? row.tcgProductId : null,
       tcgCategoryId: Number.isInteger(row.tcgCategoryId) ? row.tcgCategoryId : null,
       tcgGroupId: Number.isInteger(row.tcgGroupId) ? row.tcgGroupId : null,

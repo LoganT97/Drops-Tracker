@@ -17,7 +17,7 @@ type TcgMatch = {
 
 const blank = () => ({
   sku: "", productName: "", brand: "Pokemon" as string,
-  retailPrice: "", marketPrice: "", imageUrl: "", productUrl: "",
+  retailPrice: "", marketPrice: "", imageUrl: "", productUrl: "", prerelease: false,
 });
 
 export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
@@ -186,7 +186,7 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
       .map((l) => l.trim())
       .filter(Boolean)
       .map((line) => {
-        const [sku, productName, brand, retailPrice, marketPrice] = line
+        const [sku, productName, brand, retailPrice, marketPrice, prerelease] = line
           .split(/\t|,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
           .map((c) => c.replace(/^"|"$/g, "").trim());
         return {
@@ -196,6 +196,7 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
           brand: (BRANDS as readonly string[]).includes(brand) ? brand : guessBrand(productName ?? ""),
           retailPrice,
           marketPrice,
+          prerelease: ["true", "yes", "prerelease", "pre-release"].includes((prerelease ?? "").toLowerCase()),
         };
       });
 
@@ -236,7 +237,7 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
               <label htmlFor="name">Product</label>
               <input
                 id="name" value={form.productName}
-                onChange={(e) => { set("productName", e.target.value); setLinked(null); }}
+                onChange={(e) => set("productName", e.target.value)}
                 placeholder="Prismatic Evolutions Elite Trainer Box"
               />
             </div>
@@ -261,6 +262,18 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
                 placeholder="optional"
               />
             </div>
+            <label className="prerelease-switch-row add-prerelease-switch">
+              <span>Prerelease</span>
+              <input
+                type="checkbox"
+                checked={form.prerelease}
+                onChange={(e) => setForm((f) => ({ ...f, prerelease: e.target.checked }))}
+              />
+              <span className="prerelease-switch" aria-hidden="true" />
+            </label>
+          </div>
+
+          <div className="add-product-actions">
             <button className="ghost-btn" style={{ width: "auto" }} onClick={findMarket} disabled={searching}>
               {searching ? "Searching…" : "Find on TCGplayer"}
             </button>
@@ -278,8 +291,8 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
               {linked.imageUrl && (
                 <img className="thumb" src={linked.imageUrl} alt="" style={{ marginRight: 8, verticalAlign: "middle" }} />
               )}
-              Linked to <strong>{linked.name}</strong> ({linked.groupName}) — name, photo, and
-              market price all refresh nightly.{" "}
+              Linked to <strong>{linked.name}</strong> ({linked.groupName}) — photo and market
+              price refresh nightly; you can customize the displayed name.{" "}
               <button className="unlink" onClick={() => setLinked(null)}>unlink</button>
             </p>
           )}
@@ -307,7 +320,7 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
         <div>
           <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
             One product per line, comma or tab separated:{" "}
-            <span className="num">{meta.skuLabel.toLowerCase()}, name, brand, retail, market</span>.
+            <span className="num">{meta.skuLabel.toLowerCase()}, name, brand, retail, market, prerelease</span>.
             Everything here goes on the {meta.label} board.
           </p>
           <textarea

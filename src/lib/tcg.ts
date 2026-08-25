@@ -253,10 +253,10 @@ export async function syncTcgPrices(force = false): Promise<SyncResult> {
 /**
  * Push cached TCGplayer data onto every Product that's been linked to one.
  *
- * Linking makes TCGplayer the source of truth for the product name, the photo,
- * and the market price — so a retailer's unhelpful URL slug ("Zephyr") gets
- * replaced by the real product title, and it stays correct as TCGplayer
- * updates. Unlinked rows keep whatever was typed by hand and are never touched.
+ * Linking makes TCGplayer the source of truth for the photo and market price.
+ * The name is adopted when a link is first chosen, then remains locally
+ * editable so one TCGplayer product can describe retailer listings with
+ * different assortments or random artwork.
  */
 export async function applyPricesToProducts(): Promise<number> {
   const linked = await prisma.product.findMany({
@@ -266,7 +266,6 @@ export async function applyPricesToProducts(): Promise<number> {
       tcgProductId: true,
       marketPrice: true,
       retailPrice: true,
-      productName: true,
       imageUrl: true,
     },
   });
@@ -276,7 +275,7 @@ export async function applyPricesToProducts(): Promise<number> {
   for (const product of linked) {
     const cached = await prisma.tcgProduct.findUnique({
       where: { productId: product.tcgProductId! },
-      select: { marketPrice: true, name: true, imageUrl: true },
+      select: { marketPrice: true, imageUrl: true },
     });
     if (!cached) continue;
 
@@ -288,10 +287,6 @@ export async function applyPricesToProducts(): Promise<number> {
         data.marketPrice = next;
         data.pricedAt = new Date();
       }
-    }
-
-    if (cached.name && cached.name !== product.productName) {
-      data.productName = cached.name;
     }
 
     if (cached.imageUrl && cached.imageUrl !== product.imageUrl) {

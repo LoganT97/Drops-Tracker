@@ -26,6 +26,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
     data.brand = body.brand;
   }
+  if (body.prerelease !== undefined) data.prerelease = body.prerelease === true;
   for (const field of ["retailPrice", "marketPrice"]) {
     if (body[field] !== undefined) {
       const n = Number(body[field]);

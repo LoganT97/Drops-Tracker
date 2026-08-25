@@ -18,6 +18,7 @@ export type Row = {
   imageUrl: string | null;
   productUrl: string | null;
   notes: string | null;
+  prerelease: boolean;
   retailPrice: number | null;
   marketPrice: number | null;
   cost: number | null;
@@ -41,6 +42,8 @@ const TILES: Array<{ key: Bucket | "all"; label: string; cls: string }> = [
   { key: "mid", label: "ROI 50–99%", cls: "mid" },
   { key: "high", label: "ROI 100%+", cls: "high" },
 ];
+
+const formatSkuList = (skus: string[]) => skus.join(" ,");
 
 /** "3 hours ago", "2 days ago" — enough precision for daily price data. */
 function ago(iso: string | null): string {
@@ -76,13 +79,17 @@ export default function Dashboard({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [filter, setFilter] = useState<Bucket | "all">("all");
+  const [roiFilters, setRoiFilters] = useState<Set<Bucket>>(new Set());
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "grossRoi", dir: "desc" });
   const [copied, setCopied] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [detailFor, setDetailFor] = useState<Row | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [selectedBrands, setSelectedBrands] = useState<Set<string>>(new Set());
+  const [minProfit, setMinProfit] = useState<number | null>(null);
+  const [minRoiPercent, setMinRoiPercent] = useState<number | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const lastClicked = useRef<number | null>(null);
   const [savedField, setSavedField] = useState<string | null>(null);
   const [zipNote, setZipNote] = useState<string | null>(null);
@@ -95,10 +102,26 @@ export default function Dashboard({
     rows.forEach((r) => { if (r.bucket in c) c[r.bucket]++; });
     return c;
   }, [rows]);
+  const sliderRanges = useMemo(() => {
+    const profits = rows.flatMap((r) => r.netProfit == null ? [] : [r.netProfit]);
+    const rois = rows.flatMap((r) => r.grossRoi == null ? [] : [r.grossRoi * 100]);
+    const profitMin = Math.floor(Math.min(...profits, 0));
+    const profitMax = Math.max(profitMin + 1, Math.ceil(Math.max(...profits, 0)));
+    const roiMin = Math.floor(Math.min(...rois, 0));
+    const roiMax = Math.max(roiMin + 1, Math.ceil(Math.max(...rois, 0)));
+    return { profitMin, profitMax, roiMin, roiMax };
+  }, [rows]);
+  const activeFilterCount = selectedBrands.size
+    + (minProfit == null ? 0 : 1)
+    + (minRoiPercent == null ? 0 : 1);
 
   const visible = useMemo(() => {
-    let list = filter === "all" ? [...rows] : rows.filter((r) => r.bucket === filter);
+    let list = roiFilters.size === 0 ? [...rows] : rows.filter((r) => roiFilters.has(r.bucket));
     if (selectedBrands.size > 0) list = list.filter((r) => selectedBrands.has(r.brand));
+    if (minProfit != null) list = list.filter((r) => r.netProfit != null && r.netProfit >= minProfit);
+    if (minRoiPercent != null) {
+      list = list.filter((r) => r.grossRoi != null && r.grossRoi * 100 >= minRoiPercent);
+    }
     const { key, dir } = sort;
     return list.sort((a, b) => {
       const av = a[key], bv = b[key];
@@ -109,7 +132,19 @@ export default function Dashboard({
         : (av as number) - (bv as number);
       return dir === "asc" ? cmp : -cmp;
     });
-  }, [rows, filter, sort, selectedBrands]);
+  }, [rows, roiFilters, sort, selectedBrands, minProfit, minRoiPercent]);
+
+  function toggleRoiFilter(bucket: Bucket | "all") {
+    if (bucket === "all") {
+      setRoiFilters(new Set());
+      return;
+    }
+    setRoiFilters((previous) => {
+      const next = new Set(previous);
+      next.has(bucket) ? next.delete(bucket) : next.add(bucket);
+      return next;
+    });
+  }
 
   function toggleBrand(brand: string) {
     setSelectedBrands((prev) => {
@@ -120,12 +155,13 @@ export default function Dashboard({
   }
 
   function clearFilters() {
-    setFilter("all");
     setSelectedBrands(new Set());
+    setMinProfit(null);
+    setMinRoiPercent(null);
   }
 
   function copyFilteredSkus() {
-    navigator.clipboard.writeText(visible.map((r) => r.sku).join("\n"));
+    navigator.clipboard.writeText(formatSkuList(visible.map((r) => r.sku)));
     setCopied("filtered");
     setTimeout(() => setCopied(null), 1600);
   }
@@ -170,14 +206,14 @@ export default function Dashboard({
 
   function copySelected() {
     const skus = rows.filter((r) => selected.has(r.id)).map((r) => r.sku);
-    navigator.clipboard.writeText(skus.join("\n"));
+    navigator.clipboard.writeText(formatSkuList(skus));
     setCopied("selected");
     setTimeout(() => setCopied(null), 1600);
   }
 
   function copySkus(bucket: Bucket | "all") {
     const list = bucket === "all" ? rows : rows.filter((r) => r.bucket === bucket);
-    navigator.clipboard.writeText(list.map((r) => r.sku).join("\n"));
+    navigator.clipboard.writeText(formatSkuList(list.map((r) => r.sku)));
     setCopied(bucket);
     setTimeout(() => setCopied(null), 1600);
   }
@@ -292,26 +328,181 @@ export default function Dashboard({
     <>
       {canEdit && <AddProduct retailer={retailer} />}
 
-      <div className="sku-filters">
-        <div className="sku-filters-head">
-          <h2>Customize SKU List</h2>
-          <button className="clear-filters-link" onClick={clearFilters}>Clear all filters</button>
-        </div>
-
-        <div className="filter-group-label">Brand</div>
-        <div className="brand-pills">
-          {BRANDS.map((b) => (
+      <div className="tiles">
+        {TILES.map((t) => (
+          <div
+            key={t.key}
+            className={`tile ${t.cls}`}
+            aria-pressed={t.key === "all" ? roiFilters.size === 0 : roiFilters.has(t.key)}
+          >
             <button
-              key={b}
-              className={`brand-pill ${selectedBrands.has(b) ? "on" : ""}`}
-              onClick={() => toggleBrand(b)}
+              onClick={() => toggleRoiFilter(t.key)}
+              style={{ all: "unset", cursor: "pointer", display: "block", width: "100%" }}
             >
-              {b}
+              <div className="label">{t.label}</div>
+              <div className="count">{counts[t.key] ?? 0}</div>
             </button>
-          ))}
+            <button className="ghost-btn" onClick={() => copySkus(t.key)}>
+              {copied === t.key ? "Copied" : "Copy all SKUs"}
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="sku-tools-row">
+        <div className={`sku-filters ${filtersOpen ? "open" : "collapsed"}`}>
+          <div className="sku-filters-head">
+            <button
+              className="sku-filters-toggle"
+              onClick={() => {
+                setFiltersOpen((open) => !open);
+                setSettingsOpen(false);
+              }}
+              aria-expanded={filtersOpen}
+              aria-controls="sku-filter-options"
+            >
+              <span className="filter-chevron" aria-hidden="true">›</span>
+              <span>Filters</span>
+              {activeFilterCount > 0 && <span className="active-filter-count">{activeFilterCount}</span>}
+            </button>
+            {activeFilterCount > 0 && (
+              <button className="filter-clear-inline" onClick={clearFilters}>Clear all</button>
+            )}
+          </div>
+
+          {filtersOpen && (
+            <div className="sku-filters-body" id="sku-filter-options">
+              <div className="filter-group-label">Brand</div>
+              <div className="brand-pills">
+                {BRANDS.map((b) => (
+                  <button
+                    key={b}
+                    className={`brand-pill ${selectedBrands.has(b) ? "on" : ""}`}
+                    onClick={() => toggleBrand(b)}
+                  >
+                    {b}
+                  </button>
+                ))}
+              </div>
+
+              <div className="filter-sliders">
+                <label className="filter-slider">
+                  <span className="filter-slider-head">
+                    <span>Minimum profit / box</span>
+                    <output>{minProfit == null ? "Any" : money(minProfit)}</output>
+                  </span>
+                  <input
+                    type="range"
+                    min={sliderRanges.profitMin}
+                    max={sliderRanges.profitMax}
+                    step="1"
+                    value={minProfit ?? sliderRanges.profitMin}
+                    onChange={(e) => {
+                      const value = Number(e.target.value);
+                      setMinProfit(value === sliderRanges.profitMin ? null : value);
+                    }}
+                  />
+                </label>
+
+                <label className="filter-slider">
+                  <span className="filter-slider-head">
+                    <span>Minimum potential ROI</span>
+                    <output>{minRoiPercent == null ? "Any" : `${minRoiPercent.toFixed(0)}%`}</output>
+                  </span>
+                  <input
+                    type="range"
+                    min={sliderRanges.roiMin}
+                    max={sliderRanges.roiMax}
+                    step="1"
+                    value={minRoiPercent ?? sliderRanges.roiMin}
+                    onChange={(e) => {
+                      const value = Number(e.target.value);
+                      setMinRoiPercent(value === sliderRanges.roiMin ? null : value);
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="sku-filters-actions">
+        <div className={`sku-filters sku-settings ${settingsOpen ? "open" : "collapsed"}`}>
+          <div className="sku-filters-head">
+            <button
+              className="sku-filters-toggle"
+              onClick={() => {
+                setSettingsOpen((open) => !open);
+                setFiltersOpen(false);
+              }}
+              aria-expanded={settingsOpen}
+              aria-controls="sku-settings-options"
+            >
+              <span className="filter-chevron" aria-hidden="true">›</span>
+              <span>Settings</span>
+            </button>
+          </div>
+
+          {settingsOpen && (
+            <div className="sku-filters-body settings-body" id="sku-settings-options">
+              <div className="controls settings-controls">
+                <div className="field">
+                  <label htmlFor="zip">
+                    ZIP / postal code {savedField === "zip" && <span className="saved-tick">saved</span>}
+                  </label>
+                  <input
+                    id="zip"
+                    style={{ minWidth: 110 }}
+                    placeholder="60601 or M5V"
+                    defaultValue={settings.postalCode}
+                    onKeyDown={commitOnEnter}
+                    onBlur={(e) => lookupZip(e.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="tax">
+                    Sales tax % {savedField === "tax" && <span className="saved-tick">saved</span>}
+                  </label>
+                  <input
+                    id="tax" type="number" step="0.001"
+                    value={taxValue}
+                    onChange={(e) => setTaxValue(e.target.value)}
+                    onKeyDown={commitOnEnter}
+                    onBlur={(e) => saveSettings("tax", { taxRate: Number(e.target.value) / 100 })}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="fee">
+                    Marketplace fee % {savedField === "fee" && <span className="saved-tick">saved</span>}
+                  </label>
+                  <input
+                    id="fee" type="number" step="0.01"
+                    defaultValue={(settings.feePct * 100).toFixed(2)}
+                    onKeyDown={commitOnEnter}
+                    onBlur={(e) => saveSettings("fee", { marketplaceFeePct: Number(e.target.value) / 100 })}
+                  />
+                </div>
+                {canEdit && (
+                  <button className="ghost-btn" style={{ width: "auto" }} onClick={syncPrices} disabled={syncing}>
+                    {syncing ? "Syncing prices…" : "Sync TCGplayer prices"}
+                  </button>
+                )}
+                {pending && <span className="muted" style={{ fontSize: 13 }}>Saving…</span>}
+              </div>
+
+              {zipNote && <p className="settings-note">{zipNote}</p>}
+              <p className="settings-note">
+                TCGplayer prices last synced{" "}
+                <span title={lastSyncedAt ? exact(lastSyncedAt) : "no sync has run yet"}>
+                  {ago(lastSyncedAt)}
+                </span>
+                . TCGCSV rebuilds once a day.
+              </p>
+              {syncNote && <p className="settings-note">{syncNote}</p>}
+            </div>
+          )}
+        </div>
+
+        <div className="sku-list-actions">
           <button className="primary-btn" onClick={copyFilteredSkus}>
             {copied === "filtered" ? "Copied" : `Create SKU List (${visible.length})`}
           </button>
@@ -325,80 +516,6 @@ export default function Dashboard({
           </button>
         </div>
       </div>
-
-      <div className="tiles">
-        {TILES.map((t) => (
-          <div key={t.key} className={`tile ${t.cls}`} aria-pressed={filter === t.key}>
-            <button
-              onClick={() => setFilter(t.key)}
-              style={{ all: "unset", cursor: "pointer", display: "block", width: "100%" }}
-            >
-              <div className="label">{t.label}</div>
-              <div className="count">{counts[t.key] ?? 0}</div>
-            </button>
-            <button className="ghost-btn" onClick={() => copySkus(t.key)}>
-              {copied === t.key ? "Copied" : "Copy all SKUs"}
-            </button>
-          </div>
-        ))}
-      </div>
-
-      <div className="controls">
-        <div className="field">
-          <label htmlFor="zip">
-            ZIP / postal code {savedField === "zip" && <span className="saved-tick">saved</span>}
-          </label>
-          <input
-            id="zip"
-            style={{ minWidth: 110 }}
-            placeholder="60601 or M5V"
-            defaultValue={settings.postalCode}
-            onKeyDown={commitOnEnter}
-            onBlur={(e) => lookupZip(e.target.value)}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="tax">
-            Sales tax % {savedField === "tax" && <span className="saved-tick">saved</span>}
-          </label>
-          <input
-            id="tax" type="number" step="0.001"
-            value={taxValue}
-            onChange={(e) => setTaxValue(e.target.value)}
-            onKeyDown={commitOnEnter}
-            onBlur={(e) => saveSettings("tax", { taxRate: Number(e.target.value) / 100 })}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="fee">
-            Marketplace fee % {savedField === "fee" && <span className="saved-tick">saved</span>}
-          </label>
-          <input
-            id="fee" type="number" step="0.01"
-            defaultValue={(settings.feePct * 100).toFixed(2)}
-            onKeyDown={commitOnEnter}
-            onBlur={(e) => saveSettings("fee", { marketplaceFeePct: Number(e.target.value) / 100 })}
-          />
-        </div>
-        {canEdit && (
-          <button className="ghost-btn" style={{ width: "auto" }} onClick={syncPrices} disabled={syncing}>
-            {syncing ? "Syncing prices…" : "Sync TCGplayer prices"}
-          </button>
-        )}
-        {pending && <span className="muted" style={{ fontSize: 13 }}>Saving…</span>}
-      </div>
-
-      {zipNote && <p className="muted" style={{ fontSize: 12 }}>{zipNote}</p>}
-
-      <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>
-        TCGplayer prices last synced{" "}
-        <span title={lastSyncedAt ? exact(lastSyncedAt) : "no sync has run yet"}>
-          {ago(lastSyncedAt)}
-        </span>
-        . TCGCSV rebuilds once a day.
-      </p>
-
-      {syncNote && <p className="muted" style={{ fontSize: 13 }}>{syncNote}</p>}
 
       {error && <p style={{ color: "var(--red)", fontSize: 13 }}>{error}</p>}
 
@@ -461,9 +578,12 @@ export default function Dashboard({
                   />
                 </td>
                 <td>
-                  <button className="name-link" onClick={() => setDetailFor(r)}>
-                    {r.productName}
-                  </button>
+                  <div className="product-name-cell">
+                    <button className="name-link" onClick={() => setDetailFor(r)}>
+                      {r.productName}
+                    </button>
+                    {r.prerelease && <span className="prerelease-badge">Prerelease</span>}
+                  </div>
                 </td>
                 <td className="hide-sm">
                   {canEdit ? (

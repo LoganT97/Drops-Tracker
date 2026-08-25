@@ -63,6 +63,8 @@ model Product {
   retailPrice Decimal  @db.Decimal(10, 2)
   marketPrice Decimal? @db.Decimal(10, 2)
   notes       String?
+  /// Manually mark products that have not reached their general release date.
+  prerelease  Boolean  @default(false)
 
   /// Link to a TCGplayer product. When set, the nightly sync overwrites
   /// marketPrice automatically. Leave null to keep typing prices by hand.
@@ -70,11 +72,11 @@ model Product {
   tcgCategoryId Int?
   tcgGroupId    Int?
 
-  active      Boolean  @default(true)
+  active   Boolean  @default(true)
   /// Bumped whenever someone edits a price, so the table can show staleness
-  pricedAt    DateTime @default(now())
+  pricedAt DateTime @default(now())
 
-  snapshots   PriceSnapshot[]
+  snapshots PriceSnapshot[]
 
   createdById String?
   createdBy   User?    @relation("ProductCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
@@ -85,14 +87,13 @@ model Product {
   @@index([active])
 }
 
-
 // ---------- TCGplayer price cache ----------
 
 /// A local mirror of sealed TCGplayer products, refreshed once a day from
 /// TCGCSV. Searches hit this table, never the network, so the add form is
 /// instant and we stay well inside TCGCSV's usage limits.
 model TcgProduct {
-  productId    Int      @id
+  productId    Int       @id
   name         String
   categoryId   Int
   categoryName String
@@ -100,7 +101,7 @@ model TcgProduct {
   groupName    String
   imageUrl     String?
   url          String?
-  marketPrice  Decimal? @db.Decimal(10, 2)
+  marketPrice  Decimal?  @db.Decimal(10, 2)
   pricedAt     DateTime?
 
   @@index([name])
@@ -116,7 +117,6 @@ model SyncState {
   productCount Int       @default(0)
   lastError    String?
 }
-
 
 /// One row per product per day. Written by the nightly sync and whenever
 /// someone edits a market price by hand, so both linked and manual SKUs build
@@ -134,7 +134,6 @@ model PriceSnapshot {
   @@unique([productId, capturedOn])
   @@index([productId, capturedOn])
 }
-
 
 /// US combined sales tax rates by ZIP, imported from a bundled CSV rather than
 /// a live API — it's a setting people touch twice a year, so a network

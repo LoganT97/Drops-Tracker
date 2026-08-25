@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { parseProductUrl } from "@/lib/retailers";
+import { cleanTargetProductName, parseProductUrl } from "@/lib/retailers";
 
 type ProductData = { name?: string; price?: number; imageUrl?: string };
 
@@ -14,7 +14,10 @@ function textMeta(html: string, key: string): string | undefined {
 }
 
 function decodeHtml(value: string | undefined): string | undefined {
-  return value?.replace(/&quot;/g, '"').replace(/&#39;|&#x27;/g, "'")
+  return value
+    ?.replace(/&#x([0-9a-f]+);/gi, (_match, code: string) => String.fromCodePoint(Number.parseInt(code, 16)))
+    .replace(/&#(\d+);/g, (_match, code: string) => String.fromCodePoint(Number(code)))
+    .replace(/&quot;/g, '"').replace(/&#39;|&#x27;/g, "'")
     .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 }
 
@@ -144,10 +147,11 @@ export async function POST(req: Request) {
     const price = product.price
       ?? (Number.isFinite(metaPrice) ? metaPrice : undefined)
       ?? await fetchTargetRetailPrice(html, parsed.sku);
+    const name = decodeHtml(product.name ?? textMeta(html, "og:title")) ?? parsed.productName;
     return NextResponse.json({
       sku: parsed.sku,
       productUrl: parsed.productUrl,
-      name: decodeHtml(product.name ?? textMeta(html, "og:title")) ?? parsed.productName,
+      name: name ? cleanTargetProductName(name) : undefined,
       retailPrice: price,
       imageUrl: decodeHtml(product.imageUrl ?? textMeta(html, "og:image")),
     });

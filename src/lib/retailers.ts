@@ -24,6 +24,16 @@ export const BRANDS = [
 
 export type Brand = (typeof BRANDS)[number];
 
+/** Remove Target's repetitive category prefix so product searches use the useful title. */
+export function cleanTargetProductName(name: string): string {
+  return name
+    .replace(
+      /^Pok(?:e|é|\s*233\s*|&#(?:233|x0*e9);)mon\s+T(?:r)?ading\s+Card\s+Game:\s*/i,
+      "",
+    )
+    .trim();
+}
+
 /**
  * Pull the SKU and a product name straight out of a pasted product link.
  *
@@ -63,7 +73,7 @@ export function parseProductUrl(input: string): {
     return {
       retailer: "TARGET",
       sku: tcin,
-      productName: slug ? titleize(slug) : undefined,
+      productName: slug ? cleanTargetProductName(titleize(slug)) : undefined,
       productUrl: url.origin + path,
     };
   }

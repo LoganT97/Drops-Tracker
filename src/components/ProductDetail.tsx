@@ -27,6 +27,8 @@ export default function ProductDetail({
 }) {
   const [points, setPoints] = useState<Point[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState(row.productName);
+  const [prerelease, setPrerelease] = useState(row.prerelease);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,28 +48,58 @@ export default function ProductDetail({
   const priced = (points ?? []).filter((p) => p.marketPrice != null);
   const meta = RETAILERS[retailer];
 
+  async function saveName(value: string | number | null) {
+    const name = String(value ?? "").trim();
+    if (!name) return false;
+    const ok = await onSave(row.id, { productName: name });
+    if (ok) setDisplayName(name);
+    return ok;
+  }
+
+  async function togglePrerelease(next: boolean) {
+    const previous = prerelease;
+    setPrerelease(next);
+    if (!(await onSave(row.id, { prerelease: next }))) setPrerelease(previous);
+  }
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal detail" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div className="detail-title">
-            {row.imageUrl && <img className="detail-photo" src={row.imageUrl} alt={row.productName} />}
+            {row.imageUrl && <img className="detail-photo" src={row.imageUrl} alt={displayName} />}
             <div>
               <h2>
                 <EditableCell
-                  readOnly={!canEdit || row.linked}
-                  value={row.productName}
-                  onSave={(v) => onSave(row.id, { productName: v })}
+                  readOnly={!canEdit}
+                  value={displayName}
+                  onSave={saveName}
                 />
+                {prerelease && <span className="prerelease-badge">Prerelease</span>}
               </h2>
               <p className="muted">
                 {row.brand} · {meta.skuLabel} <span className="num">{row.sku}</span>
                 {row.linked && <span className="linked-dot" title="Priced from TCGplayer"> ●</span>}
               </p>
-              {row.productUrl && (
-                <a className="detail-link" href={row.productUrl} target="_blank" rel="noreferrer">
-                  Open on {meta.label} ↗
-                </a>
+              {(row.productUrl || canEdit) && (
+                <div className="detail-actions">
+                  {row.productUrl && (
+                    <a className="detail-link" href={row.productUrl} target="_blank" rel="noreferrer">
+                      Open on {meta.label} ↗
+                    </a>
+                  )}
+                  {canEdit && (
+                    <label className="prerelease-switch-row">
+                      <span>Prerelease</span>
+                      <input
+                        type="checkbox"
+                        checked={prerelease}
+                        onChange={(e) => void togglePrerelease(e.target.checked)}
+                      />
+                      <span className="prerelease-switch" aria-hidden="true" />
+                    </label>
+                  )}
+                </div>
               )}
             </div>
           </div>
