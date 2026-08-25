@@ -8,8 +8,9 @@ import { prisma } from "@/lib/db";
  * edit records a point; the unique constraint on (productId, capturedOn) means
  * a day gets updated rather than duplicated if that happens twice.
  *
- * Consequence worth knowing: a SKU's chart starts the day you add it. There's
- * no backfill.
+ * Linked SKUs can also import the last 30 days from TCGCSV's compressed daily
+ * archives. Only matching price points are retained; downloaded archives are
+ * temporary and are deleted after each date is processed.
  */
 
 /** Midnight UTC for today, so a day is one row regardless of clock time. */

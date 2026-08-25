@@ -97,6 +97,11 @@ h1.title .accent { color: var(--red); }
   min-height: 36px;
   padding: 7px 10px;
 }
+.admin-toolbar .admin-backfill-button {
+  width: 120px;
+  min-height: 36px;
+  padding: 7px 10px;
+}
 .admin-sync-progress { margin: 10px 0 0 auto; }
 .admin-sync-note {
   width: min(420px, 100%);
@@ -1185,6 +1190,17 @@ input:focus, select:focus { outline: 2px solid var(--mint); outline-offset: 1px;
   font-weight: 600;
   margin: 0 0 12px;
 }
+
+.detail-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.detail-history-head .detail-section { margin: 0; }
+.detail-history-head .ghost-btn { width: auto; flex-shrink: 0; }
+.detail-backfill-progress { margin: 0 0 16px; }
 
 /* ---------- row selection ---------- */
 

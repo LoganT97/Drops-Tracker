@@ -19,7 +19,15 @@ type SyncProgress = {
   totalGroups: number;
   error: string | null;
 };
-
+type BackfillProgress = {
+  active: boolean;
+  percent: number;
+  stage: string;
+  processedDays: number;
+  totalDays: number;
+  snapshots: number;
+  error: string | null;
+};
 export type Row = {
   id: string;
   sku: string;
@@ -121,6 +129,9 @@ export default function Dashboard({
   const [searchQuery, setSearchQuery] = useState("");
   const [auditOpen, setAuditOpen] = useState(false);
   const [usersOpen, setUsersOpen] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillProgress, setBackfillProgress] = useState<BackfillProgress | null>(null);
+  const [backfillNote, setBackfillNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (!canEdit) return;
@@ -145,6 +156,26 @@ export default function Dashboard({
       window.clearInterval(timer);
     };
   }, [canEdit, syncProgress?.active]);
+
+  useEffect(() => {
+    if (!canEdit) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const response = await fetch("/api/tcg/backfill/status", { cache: "no-store" });
+        if (!response.ok) return;
+        const progress: BackfillProgress = await response.json();
+        if (cancelled) return;
+        if (progress.active || backfillProgress?.active) setBackfillProgress(progress);
+        setBackfilling(progress.active);
+      } catch {
+        // The long-running POST still reports the final result.
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 1000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [canEdit, backfillProgress?.active]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: rows.length, negative: 0, low: 0, mid: 0, high: 0 };
@@ -334,6 +365,27 @@ export default function Dashboard({
     startTransition(() => router.refresh());
   }
 
+  async function backfillAllPrices() {
+    setBackfilling(true);
+    setBackfillNote(null);
+    setBackfillProgress({ active: true, percent: 1, stage: "Preparing backfill…", processedDays: 0, totalDays: 30, snapshots: 0, error: null });
+    try {
+      const response = await fetch("/api/tcg/backfill", { method: "POST" });
+      const text = await response.text();
+      const result = text ? JSON.parse(text) as { snapshots?: number; error?: string } : {};
+      setBackfilling(false);
+      if (!response.ok) {
+        setBackfillNote(result.error ?? "Price-history backfill failed.");
+        return;
+      }
+      setBackfillNote(`Imported ${result.snapshots ?? 0} historical price points. Temporary files were deleted.`);
+      startTransition(() => router.refresh());
+    } catch {
+      setBackfilling(false);
+      setBackfillNote("The backfill request failed. Check the server console.");
+    }
+  }
+
   /**
    * Settings live on the user's row, so they persist across sessions, devices,
    * and both boards. Saved on blur or Enter, with a per-field confirmation so
@@ -412,6 +464,9 @@ export default function Dashboard({
             <button className="ghost-btn admin-sync-button" onClick={syncPrices} disabled={syncing}>
               {syncing ? "Syncing prices…" : "Scan TCGplayer prices"}
             </button>
+            <button className="ghost-btn admin-backfill-button" onClick={backfillAllPrices} disabled={backfilling}>
+              {backfilling ? "Backfilling…" : "Backfill All"}
+            </button>
           </div>
           {syncNote && <p className="admin-sync-note">{syncNote}</p>}
           {syncing && syncProgress && (
@@ -428,6 +483,21 @@ export default function Dashboard({
                   {syncProgress.processedGroups} of {syncProgress.totalGroups} sets processed
                 </span>
               )}
+            </div>
+          )}
+          {backfillNote && <p className="admin-sync-note">{backfillNote}</p>}
+          {backfilling && backfillProgress && (
+            <div className="sync-progress admin-sync-progress" aria-live="polite">
+              <div className="sync-progress-head">
+                <span>{backfillProgress.stage}</span>
+                <strong>{backfillProgress.percent}%</strong>
+              </div>
+              <div className="sync-progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={backfillProgress.percent}>
+                <span style={{ width: `${backfillProgress.percent}%` }} />
+              </div>
+              <span className="sync-progress-count">
+                {backfillProgress.processedDays} of {backfillProgress.totalDays} days · {backfillProgress.snapshots} price points
+              </span>
             </div>
           )}
         </div>

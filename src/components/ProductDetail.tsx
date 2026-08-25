@@ -7,6 +7,14 @@ import EditableCell from "./EditableCell";
 import type { Row } from "./Dashboard";
 
 type Point = { date: string; marketPrice: number | null; retailPrice: number | null };
+type BackfillProgress = {
+  active: boolean;
+  percent: number;
+  stage: string;
+  processedDays: number;
+  totalDays: number;
+  snapshots: number;
+};
 
 /**
  * Everything about one SKU in one card: photo, name, the price breakdown, and
@@ -30,6 +38,10 @@ export default function ProductDetail({
   const [displayName, setDisplayName] = useState(row.productName);
   const [prerelease, setPrerelease] = useState(row.prerelease);
   const [releaseDate, setReleaseDate] = useState(row.releaseDate ?? "");
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillProgress, setBackfillProgress] = useState<BackfillProgress | null>(null);
+  const [backfillNote, setBackfillNote] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,7 +50,7 @@ export default function ProductDetail({
       .then((data) => { if (!cancelled) setPoints(data); })
       .catch((e) => { if (!cancelled) setError(e.message); });
     return () => { cancelled = true; };
-  }, [row.id]);
+  }, [row.id, historyVersion]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -67,6 +79,40 @@ export default function ProductDetail({
     const previous = releaseDate;
     setReleaseDate(next);
     if (!(await onSave(row.id, { releaseDate: next || null }))) setReleaseDate(previous);
+  }
+
+  async function backfillHistory() {
+    setBackfilling(true);
+    setBackfillNote(null);
+    setBackfillProgress({ active: true, percent: 1, stage: "Preparing backfill…", processedDays: 0, totalDays: 30, snapshots: 0 });
+
+    const poll = async () => {
+      try {
+        const response = await fetch("/api/tcg/backfill/status", { cache: "no-store" });
+        if (response.ok) setBackfillProgress(await response.json());
+      } catch {
+        // The backfill request itself still reports the final result.
+      }
+    };
+    const timer = window.setInterval(() => void poll(), 1000);
+
+    try {
+      const response = await fetch(`/api/products/${row.id}/backfill`, { method: "POST" });
+      const text = await response.text();
+      const result = text ? JSON.parse(text) as { snapshots?: number; skippedDays?: number; error?: string } : {};
+      window.clearInterval(timer);
+      setBackfilling(false);
+      if (!response.ok) {
+        setBackfillNote(result.error ?? "Price-history backfill failed.");
+        return;
+      }
+      setBackfillNote(`Imported ${result.snapshots ?? 0} price points. Temporary files were deleted.`);
+      setHistoryVersion((version) => version + 1);
+    } catch {
+      window.clearInterval(timer);
+      setBackfilling(false);
+      setBackfillNote("The backfill request failed. Check the server console.");
+    }
   }
 
   return (
@@ -139,7 +185,30 @@ export default function ProductDetail({
           <Stat label="Potential ROI" value={pct(row.grossRoi)} tone={row.bucket} />
         </div>
 
-        <h3 className="detail-section">Market price, last 30 days</h3>
+        <div className="detail-history-head">
+          <h3 className="detail-section">Market price, last 30 days</h3>
+          {canEdit && row.linked && (
+            <button className="ghost-btn" onClick={backfillHistory} disabled={backfilling}>
+              {backfilling ? "Backfilling…" : "Backfill 30 days"}
+            </button>
+          )}
+        </div>
+
+        {backfillNote && <p className="settings-note">{backfillNote}</p>}
+        {backfilling && backfillProgress && (
+          <div className="sync-progress detail-backfill-progress" aria-live="polite">
+            <div className="sync-progress-head">
+              <span>{backfillProgress.stage}</span>
+              <strong>{backfillProgress.percent}%</strong>
+            </div>
+            <div className="sync-progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={backfillProgress.percent}>
+              <span style={{ width: `${backfillProgress.percent}%` }} />
+            </div>
+            <span className="sync-progress-count">
+              {backfillProgress.processedDays} of {backfillProgress.totalDays} days · {backfillProgress.snapshots} price points
+            </span>
+          </div>
+        )}
 
         {error && <p style={{ color: "var(--red)" }}>{error}</p>}
         {!points && !error && <p className="muted">Loading…</p>}
