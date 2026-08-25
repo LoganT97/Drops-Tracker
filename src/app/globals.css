@@ -364,6 +364,30 @@ h1.title .accent { color: var(--red); }
   overflow: hidden;
 }
 
+.sku-table-panel {
+  max-height: 1166px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #3a414b transparent;
+}
+
+.sku-table-panel::-webkit-scrollbar { width: 9px; height: 9px; }
+.sku-table-panel::-webkit-scrollbar-track { background: transparent; }
+.sku-table-panel::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: #3a414b;
+  background-clip: padding-box;
+}
+.sku-table-panel::-webkit-scrollbar-thumb:hover { background-color: #505966; }
+
+.sku-table-panel thead {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--surface);
+}
+
 table { width: 100%; border-collapse: collapse; }
 
 thead th {

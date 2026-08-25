@@ -519,7 +519,7 @@ export default function Dashboard({
 
       {error && <p style={{ color: "var(--red)", fontSize: 13 }}>{error}</p>}
 
-      <div className="panel">
+      <div className="panel sku-table-panel">
         <table>
           <thead>
             <tr>
