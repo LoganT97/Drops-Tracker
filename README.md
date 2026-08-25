@@ -1,126 +1,252 @@
 # Drops Tracker
 
-Private SKU boards for Target and Walmart TCG drops, one page per store. You type in the product, the retail price, and
-what it's going for; the app handles tax, ROI, and profit per box. Sign-in is Discord-only and gated
-to a whitelist, so it stays inside your group.
+Drops Tracker is a private Target trading-card product tracker for monitoring retail prices, TCGplayer market values, profit per box, potential ROI, prereleases, release dates, and historical pricing.
 
-No scrapers, no API keys, nothing to break when a retailer changes their site.
+Access is Discord-authenticated and restricted to approved users. Administrators can manage products and pricing integrations; viewers get a read-only dashboard.
 
-Stack: Next.js 15 (App Router) · Auth.js v5 · Prisma · Postgres · deploys to Vercel.
+## Features
 
----
+- Target product-link lookup for TCIN, product name, retail price, and image
+- TCGplayer matching through a local TCGCSV cache
+- Nightly or manual TCGCSV market-price synchronization
+- Automatic prerelease status and release dates when provided by TCGCSV
+- Retail-plus-tax, profit-per-box, and potential-ROI calculations
+- Search, filters, sorting, row selection, and copyable SKU lists
+- Preloaded 30-day price graphs with release-date markers
+- Individual and all-product TCGCSV history backfills
+- Admin audit history and current-user activity panel
+- Admin View and Viewer View previews
 
-## Setup
+## Technology
+
+- Next.js 15 and React 19
+- Auth.js with Discord OAuth
+- Prisma and PostgreSQL
+- TCGCSV for TCGplayer product and price data
+- PM2 for the production Node.js process
+
+## Environment variables
+
+Create `.env` locally and configure the same values on the server:
+
+```env
+DATABASE_URL="postgresql://..."
+AUTH_SECRET="..."
+AUTH_DISCORD_ID="..."
+AUTH_DISCORD_SECRET="..."
+
+# Comma-separated Discord IDs that always receive administrator access.
+ADMIN_DISCORD_IDS="123456789012345678"
+
+# Optional Discord-server access control.
+DISCORD_GUILD_ID=""
+DISCORD_REQUIRED_ROLE_IDS=""
+DISCORD_BOT_TOKEN=""
+
+# Protects the scheduled TCGCSV sync endpoint.
+CRON_SECRET=""
+```
+
+Generate an Auth.js secret with:
 
 ```bash
-npm install
-cp .env.example .env        # fill in the Discord + database values
-npx auth secret             # writes AUTH_SECRET
-npm run db:push             # creates the tables
-npm run dev
+npx auth secret
 ```
 
-### Discord app
+## Discord configuration
 
-1. https://discord.com/developers/applications → New Application → OAuth2.
-2. Redirect URI: `http://localhost:3000/api/auth/callback/discord`
-   (add `https://yourdomain.com/api/auth/callback/discord` when you deploy).
-3. Copy Client ID and Secret into `AUTH_DISCORD_ID` / `AUTH_DISCORD_SECRET`.
-4. Put your own Discord user ID in `ADMIN_DISCORD_IDS` — that's how you get in the first time.
-   (Discord → Settings → Advanced → Developer Mode, then right-click yourself → Copy User ID.)
+1. Create an application in the [Discord Developer Portal](https://discord.com/developers/applications).
+2. Add `http://localhost:3000/api/auth/callback/discord` as a local OAuth redirect.
+3. Add `https://your-domain.example/api/auth/callback/discord` for production.
+4. Put the Discord client ID and secret in `AUTH_DISCORD_ID` and `AUTH_DISCORD_SECRET`.
+5. Put your Discord user ID in `ADMIN_DISCORD_IDS` for initial administrator access.
 
-### Who gets in
+Access is granted through one of these methods:
 
-Three gates, checked in order in `src/auth.ts`:
+1. A Discord ID listed in `ADMIN_DISCORD_IDS` becomes an administrator.
+2. A Discord ID in the Prisma `Whitelist` table becomes a viewer.
+3. When configured, a required Discord server role grants viewer access.
 
-| Gate | How you set it | Result |
-|---|---|---|
-| `ADMIN_DISCORD_IDS` | env var | admin |
-| `Whitelist` table | `npx prisma studio` → add a row with their Discord ID | member |
-| Server role | `DISCORD_GUILD_ID` + `DISCORD_REQUIRED_ROLE_IDS` | member |
+## Local development on Windows
 
-The third is the one worth setting up long term: anyone holding your subscriber role in your Discord
-gets in automatically and loses access the moment the role comes off. Everyone else hits
-`/login?error=AccessDenied`.
-
----
-
-## Using it
-
-Target and Walmart are **separate boards** at `/target` and `/walmart`, each with its own list,
-its own ROI counts, and its own Copy all SKUs buttons. Whichever page you're on is the store the
-new SKU goes to — there's no store picker to get wrong.
-
-**Paste a product link** — the fastest way in. Copy the URL off the product page and drop it in the
-link box; the SKU, the product name, and the brand all fill themselves in.
-
-This is pure string parsing (`src/lib/retailers.ts`), not scraping. Both retailers put the ID and a
-readable slug right in the URL:
-
-```
-target.com/p/pokemon-tcg-prismatic-evolutions-elite-trainer-box/-/A-93954435
-walmart.com/ip/Pokemon-TCG-Prismatic-Evolutions-Elite-Trainer-Box/1012055702
+```bat
+npm.cmd install
+npx.cmd prisma db push
+npx.cmd prisma generate
+npm.cmd run dev
 ```
 
-No network call means nothing to rate-limit, block, or break. The trade-off is that the name comes
-from the URL slug, so it's a good first draft rather than the exact shelf title — glance at it before
-saving. Paste a Walmart link on the Target page and it'll tell you rather than filing it wrong.
+Open [http://localhost:3000](http://localhost:3000).
 
-**Paste a list** — one product per line, comma or tab separated:
+Whenever `prisma/schema.prisma` changes, stop the development server before regenerating Prisma. Windows may otherwise lock Prisma's query-engine DLL.
 
-```
-sku, name, brand, retail, market
-95225595, First Partners Illustration Collection, Pokemon, 15.99, 60.75
-95082118, Ascended Heroes Elite Trainer Box, Pokemon, 59.99, 167.51
-```
-
-Tab-separated means you can copy columns straight out of a spreadsheet. Everything imported lands on
-the board you're currently viewing. Rows missing a SKU, name, or retail price get skipped and
-reported back; the rest still save. Re-importing a SKU you already have updates it rather than
-duplicating it.
-
-**Images** are the one thing that can't be automated — click the thumbnail box on any row, then
-right-click the product photo on the retailer's site, Copy image address, and paste. Rows without an
-image just show a `+`.
-
-**Edit anything** — click a value in the table, type, press Enter. Prices, names, and SKUs are all
-editable in place. Brand is a dropdown everywhere it appears, in the add form and in the table, and
-the API rejects anything not on the list — so "Pokemon" can never end up split across three
-spellings. The list lives in `BRANDS` in `src/lib/retailers.ts`; add to it there and it updates
-every dropdown at once. The × at the end of a row stops tracking it.
-
-**Copy all SKUs** on each tile copies just that ROI bucket to your clipboard, so you can paste the
-100%+ list straight into whatever you buy with.
-
----
-
-## The math
-
-```
-cost         = retail × (1 + taxRate)
-grossProfit  = marketValue − cost
-grossRoi     = grossProfit / cost          ← the % in the ROI pill
-netProceeds  = marketValue × (1 − feePct) − shipping
-netProfit    = netProceeds − cost          ← the "profit / box" column
+```bat
+Ctrl+C
+npx.cmd prisma db push
+npx.cmd prisma generate
+npm.cmd run dev
 ```
 
-Gross ROI is the headline number, the way the resale community quotes it. **Marketplace fee and
-shipping both start at 0**, so profit per box matches gross ROI out of the box. Fill them in only if
-you want the after-fees number: roughly 12.75% for TCGplayer (commission plus payment processing —
-check the current rate) plus whatever a box costs you to ship.
+To inspect or edit users directly:
 
-Tax rate, fee, and shipping are **per user**, so everyone in the group sees ROI computed for their
-own state and their own selling costs off the same shared product list.
+```bat
+npx.cmd prisma studio
+```
 
----
+## Production deployment
 
-## What to add later
+The deployment script pulls `main`, installs dependencies, updates the database schema, builds the app, and restarts the `drop-buddy` PM2 process.
 
-- Discord webhook when someone adds a SKU above an ROI threshold
-- A `PriceSnapshot` table written on every price edit, so you get history and a chart for free
-- Quantity and cost-basis fields to turn this into inventory rather than a watchlist
-- Automatic names and photos from a SKU would need Target's internal API (against their terms, breaks
-  often) or Walmart's partner API (weeks of approval). Neither is reliable enough to bolt on today —
-  the link paste covers most of the benefit with none of the fragility.
-- If you ever do want automatic market prices, TCGCSV is the free route — one file, and nothing else
-  in the app has to change
+```bash
+cd ~/Drops-Tracker
+./scripts/deploy.sh
+```
+
+If the script is not executable:
+
+```bash
+chmod +x scripts/deploy.sh
+./scripts/deploy.sh
+```
+
+You can also run it explicitly through Bash:
+
+```bash
+bash scripts/deploy.sh
+```
+
+If `git pull` reports that local changes to `scripts/deploy.sh` would be overwritten:
+
+```bash
+cd ~/Drops-Tracker
+cp scripts/deploy.sh ~/deploy.sh.server-backup
+git restore scripts/deploy.sh
+git pull origin main
+chmod +x scripts/deploy.sh
+./scripts/deploy.sh
+```
+
+## Product workflow
+
+### Add and link a product
+
+Administrators can paste a Target product URL into the add panel. The app attempts to populate the TCIN, product name, current retail price, image, and Target link.
+
+The common Target prefix `Pokemon Trading Card Game:` is removed from autofilled names to improve TCGplayer matching.
+
+Use **Find on TCGplayer** to link the Target SKU to a cached TCGplayer product. Linked products receive automatic market-price, image, prerelease, and release-date updates.
+
+### Search, filters, and SKU lists
+
+The dashboard can search product names, TCINs, and brands. Filters support brand, minimum profit per box, minimum potential ROI, and multiple ROI summary ranges.
+
+If rows are selected, **Create SKU List** copies only those products. Otherwise it copies the currently visible filtered products in this format:
+
+```text
+1010892068 ,1010892069 ,1010892076
+```
+
+### Product cards
+
+Open a product by clicking its name. Cards include:
+
+- Editable product name for administrators
+- Target link and prerelease selector
+- Editable release date
+- Retail, tax-adjusted cost, market value, profit, and ROI
+- Preloaded 30-day price history
+- Release marker when release occurred during the graph window
+- Admin-only per-item history backfill for linked products
+
+## TCGCSV synchronization
+
+**Scan TCGplayer prices** is available in the administrator toolbar. It checks TCGCSV's daily build timestamp, refreshes the local product cache when needed, and updates linked SKUs.
+
+The status bar polls only while a scan is active and disappears after completion. TCGCSV should not be scanned more frequently than its daily rebuild.
+
+## Historical-price backfill
+
+TCGCSV publishes compressed daily price archives. Drops Tracker can import the previous 30 days for one linked product from its card or every linked product with **Backfill All**.
+
+The app downloads archives into a temporary operating-system directory, extracts only the required TCGplayer groups, imports matching prices, and deletes the archive and extracted files afterward—even when the operation fails.
+
+Prisma stores only compact `PriceSnapshot` rows: at most one row per product per date. It does not store downloaded archives.
+
+The bundled `7zip-bin` extractor is used automatically. The deployment script repairs its Linux executable permission after `npm install`.
+
+## Roles and administration
+
+Administrators can add, edit, link, archive, and mark products as prerelease; run scans and backfills; preview Viewer View; open audit history; and view authorized users and current activity.
+
+Viewers can browse, search, filter, sort, open product cards, and copy SKU lists without mutation controls.
+
+The Active Users panel uses an authenticated heartbeat. A visible dashboard updates activity every 30 seconds; users active within the previous two minutes appear online.
+
+## ROI calculations
+
+```text
+cost          = retail × (1 + tax rate)
+gross profit  = market value − cost
+potential ROI = gross profit ÷ cost
+net proceeds  = market value × (1 − marketplace fee) − shipping
+profit / box  = net proceeds − cost
+```
+
+ZIP/postal code, tax rate, marketplace fee, and shipping cost are stored per user.
+
+## Useful commands
+
+Windows:
+
+```bat
+npm.cmd run dev
+npm.cmd run build
+npx.cmd prisma db push
+npx.cmd prisma generate
+npx.cmd prisma studio
+```
+
+Linux server:
+
+```bash
+npm run build
+npx prisma db push
+npx prisma generate
+pm2 restart drop-buddy
+pm2 status
+```
+
+## Troubleshooting
+
+### Prisma query engine is locked on Windows
+
+Stop `npm.cmd run dev`, run `npx.cmd prisma generate`, and restart the development server.
+
+### `spawn ... 7za EACCES` on Linux
+
+```bash
+cd ~/Drops-Tracker
+chmod +x node_modules/7zip-bin/linux/x64/7za
+pm2 restart drop-buddy
+```
+
+Current deployments perform this automatically.
+
+### The product graph is empty
+
+Link the product to TCGplayer, then use **Backfill 30 days** in its card or **Backfill All** from the administrator toolbar.
+
+### Status requests repeat while idle
+
+Restart the app after updating. Current versions poll only while a scan or backfill is active.
+
+### Git refuses to pull on the server
+
+Inspect changes first:
+
+```bash
+git status --short
+git diff
+```
+
+Back up or stash intentional server edits before pulling. Avoid maintaining server-only changes inside tracked files.
