@@ -7,8 +7,17 @@ import { BRANDS, RETAILERS, type RetailerKey } from "@/lib/retailers";
 import AddProduct from "./AddProduct";
 import EditableCell from "./EditableCell";
 import ProductDetail from "./ProductDetail";
+import AuditHistory from "./AuditHistory";
 
 export type Bucket = "negative" | "low" | "mid" | "high" | "unknown";
+type SyncProgress = {
+  active: boolean;
+  percent: number;
+  stage: string;
+  processedGroups: number;
+  totalGroups: number;
+  error: string | null;
+};
 
 export type Row = {
   id: string;
@@ -19,6 +28,7 @@ export type Row = {
   productUrl: string | null;
   notes: string | null;
   prerelease: boolean;
+  releaseDate: string | null;
   retailPrice: number | null;
   marketPrice: number | null;
   cost: number | null;
@@ -79,6 +89,8 @@ export default function Dashboard({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [viewMode, setViewMode] = useState<"admin" | "viewer">("admin");
+  const effectiveCanEdit = canEdit && viewMode === "admin";
   const [roiFilters, setRoiFilters] = useState<Set<Bucket>>(new Set());
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "grossRoi", dir: "desc" });
   const [copied, setCopied] = useState<string | null>(null);
@@ -96,6 +108,33 @@ export default function Dashboard({
   const [taxValue, setTaxValue] = useState((settings.taxRate * 100).toFixed(3));
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState<string | null>(null);
+  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [auditOpen, setAuditOpen] = useState(false);
+
+  useEffect(() => {
+    if (!canEdit) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const response = await fetch("/api/tcg/sync/status", { cache: "no-store" });
+        if (!response.ok) return;
+        const progress: SyncProgress = await response.json();
+        if (cancelled) return;
+        if (progress.active || syncProgress?.active) setSyncProgress(progress);
+        if (progress.active) setSyncing(true);
+        else if (syncProgress?.active) setSyncing(false);
+      } catch {
+        // A transient status failure should not interrupt the actual sync.
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [canEdit, syncProgress?.active]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: rows.length, negative: 0, low: 0, mid: 0, high: 0 };
@@ -122,6 +161,14 @@ export default function Dashboard({
     if (minRoiPercent != null) {
       list = list.filter((r) => r.grossRoi != null && r.grossRoi * 100 >= minRoiPercent);
     }
+    const query = searchQuery.trim().toLocaleLowerCase();
+    if (query) {
+      list = list.filter((r) =>
+        r.productName.toLocaleLowerCase().includes(query)
+        || r.sku.toLocaleLowerCase().includes(query)
+        || r.brand.toLocaleLowerCase().includes(query),
+      );
+    }
     const { key, dir } = sort;
     return list.sort((a, b) => {
       const av = a[key], bv = b[key];
@@ -132,7 +179,7 @@ export default function Dashboard({
         : (av as number) - (bv as number);
       return dir === "asc" ? cmp : -cmp;
     });
-  }, [rows, roiFilters, sort, selectedBrands, minProfit, minRoiPercent]);
+  }, [rows, roiFilters, sort, selectedBrands, minProfit, minRoiPercent, searchQuery]);
 
   function toggleRoiFilter(bucket: Bucket | "all") {
     if (bucket === "all") {
@@ -160,8 +207,9 @@ export default function Dashboard({
     setMinRoiPercent(null);
   }
 
-  function copyFilteredSkus() {
-    navigator.clipboard.writeText(formatSkuList(visible.map((r) => r.sku)));
+  function copySkuList() {
+    const list = selected.size > 0 ? rows.filter((r) => selected.has(r.id)) : visible;
+    navigator.clipboard.writeText(formatSkuList(list.map((r) => r.sku)));
     setCopied("filtered");
     setTimeout(() => setCopied(null), 1600);
   }
@@ -202,13 +250,6 @@ export default function Dashboard({
       return next;
     });
     lastClicked.current = null;
-  }
-
-  function copySelected() {
-    const skus = rows.filter((r) => selected.has(r.id)).map((r) => r.sku);
-    navigator.clipboard.writeText(formatSkuList(skus));
-    setCopied("selected");
-    setTimeout(() => setCopied(null), 1600);
   }
 
   function copySkus(bucket: Bucket | "all") {
@@ -255,18 +296,30 @@ export default function Dashboard({
   async function syncPrices() {
     setSyncing(true);
     setSyncNote(null);
-    const res = await fetch("/api/tcg/sync", { method: "POST" });
-    const json = await res.json();
+    setSyncProgress({ active: true, percent: 1, stage: "Starting sync…", processedGroups: 0, totalGroups: 0, error: null });
+
+    let res: Response;
+    let json: Record<string, unknown>;
+    try {
+      res = await fetch("/api/tcg/sync", { method: "POST" });
+      const text = await res.text();
+      json = text ? JSON.parse(text) : {};
+    } catch {
+      setSyncing(false);
+      setSyncProgress((current) => current ? { ...current, active: false, error: "The sync request failed." } : null);
+      setSyncNote("The sync request failed. Check the server console.");
+      return;
+    }
     setSyncing(false);
 
     if (!res.ok) {
-      setSyncNote(json.error ?? "Sync failed.");
+      setSyncNote(typeof json.error === "string" ? json.error : "Sync failed.");
       return;
     }
     setSyncNote(
       json.skipped
         ? "Already up to date — TCGCSV refreshes once a day."
-        : `Cached ${json.products} products. Updated ${json.linkedUpdated} of your SKUs.`,
+        : `Cached ${json.products ?? 0} products. Updated ${json.linkedUpdated ?? 0} of your SKUs.`,
     );
     startTransition(() => router.refresh());
   }
@@ -326,7 +379,48 @@ export default function Dashboard({
 
   return (
     <>
-      {canEdit && <AddProduct retailer={retailer} />}
+      {canEdit && (
+        <div className="admin-controls">
+          <div className="admin-toolbar">
+            <div className="admin-view-selector">
+              <label htmlFor="admin-view-mode">View as</label>
+              <select
+                id="admin-view-mode"
+                value={viewMode}
+                onChange={(e) => setViewMode(e.target.value as "admin" | "viewer")}
+              >
+                <option value="admin">Admin View</option>
+                <option value="viewer">Viewer View</option>
+              </select>
+            </div>
+            <button className="ghost-btn audit-history-button" onClick={() => setAuditOpen(true)}>
+              Audit History
+            </button>
+            <button className="ghost-btn admin-sync-button" onClick={syncPrices} disabled={syncing}>
+              {syncing ? "Syncing prices…" : "Scan TCGplayer prices"}
+            </button>
+          </div>
+          {syncNote && <p className="admin-sync-note">{syncNote}</p>}
+          {syncing && syncProgress && (
+            <div className="sync-progress admin-sync-progress" aria-live="polite">
+              <div className="sync-progress-head">
+                <span>{syncProgress.stage}</span>
+                <strong>{syncProgress.percent}%</strong>
+              </div>
+              <div className="sync-progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={syncProgress.percent}>
+                <span style={{ width: `${syncProgress.percent}%` }} />
+              </div>
+              {syncProgress.totalGroups > 0 && (
+                <span className="sync-progress-count">
+                  {syncProgress.processedGroups} of {syncProgress.totalGroups} sets processed
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {effectiveCanEdit && <AddProduct retailer={retailer} />}
 
       <div className="tiles">
         {TILES.map((t) => (
@@ -350,6 +444,20 @@ export default function Dashboard({
       </div>
 
       <div className="sku-tools-row">
+        <label className="sku-search">
+          <span className="sr-only">Search products or {RETAILERS[retailer].skuLabel}</span>
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={`Search products or ${RETAILERS[retailer].skuLabel}`}
+          />
+        </label>
+
+        <button className="primary-btn sku-create-button" onClick={copySkuList}>
+          {copied === "filtered" ? "Copied" : `Create SKU List (${selected.size > 0 ? selected.size : visible.length})`}
+        </button>
+
         <div className={`sku-filters ${filtersOpen ? "open" : "collapsed"}`}>
           <div className="sku-filters-head">
             <button
@@ -481,11 +589,6 @@ export default function Dashboard({
                     onBlur={(e) => saveSettings("fee", { marketplaceFeePct: Number(e.target.value) / 100 })}
                   />
                 </div>
-                {canEdit && (
-                  <button className="ghost-btn" style={{ width: "auto" }} onClick={syncPrices} disabled={syncing}>
-                    {syncing ? "Syncing prices…" : "Sync TCGplayer prices"}
-                  </button>
-                )}
                 {pending && <span className="muted" style={{ fontSize: 13 }}>Saving…</span>}
               </div>
 
@@ -497,24 +600,10 @@ export default function Dashboard({
                 </span>
                 . TCGCSV rebuilds once a day.
               </p>
-              {syncNote && <p className="settings-note">{syncNote}</p>}
             </div>
           )}
         </div>
 
-        <div className="sku-list-actions">
-          <button className="primary-btn" onClick={copyFilteredSkus}>
-            {copied === "filtered" ? "Copied" : `Create SKU List (${visible.length})`}
-          </button>
-          <button
-            className="ghost-btn"
-            style={{ width: "auto" }}
-            onClick={copySelected}
-            disabled={selected.size === 0}
-          >
-            {copied === "selected" ? "Copied" : `Create SKU List from Selected (${selected.size})`}
-          </button>
-        </div>
       </div>
 
       {error && <p style={{ color: "var(--red)", fontSize: 13 }}>{error}</p>}
@@ -573,7 +662,7 @@ export default function Dashboard({
                   <ImageCell
                     url={r.imageUrl}
                     name={r.productName}
-                    canEdit={canEdit && !r.linked}
+                    canEdit={effectiveCanEdit && !r.linked}
                     onSave={(v) => save(r.id, { imageUrl: v })}
                   />
                 </td>
@@ -586,7 +675,7 @@ export default function Dashboard({
                   </div>
                 </td>
                 <td className="hide-sm">
-                  {canEdit ? (
+                  {effectiveCanEdit ? (
                     <select
                       className="cell-brand"
                       value={r.brand}
@@ -605,16 +694,16 @@ export default function Dashboard({
                   )}
                 </td>
                 <td className="hide-sm">
-                  <EditableCell readOnly={!canEdit} mono value={r.sku} onSave={(v) => save(r.id, { sku: v })} />
+                  <EditableCell readOnly={!effectiveCanEdit} mono value={r.sku} onSave={(v) => save(r.id, { sku: v })} />
                 </td>
                 <td>
-                  <EditableCell readOnly={!canEdit} mono money value={r.retailPrice} onSave={(v) => save(r.id, { retailPrice: v })} />
+                  <EditableCell readOnly={!effectiveCanEdit} mono money value={r.retailPrice} onSave={(v) => save(r.id, { retailPrice: v })} />
                 </td>
                 <td className="num muted">{money(r.cost)}</td>
                 <td>
                   <EditableCell
-                    readOnly={!canEdit || r.linked}
-                    mono money value={r.marketPrice} placeholder={canEdit ? "add" : "—"}
+                    readOnly={!effectiveCanEdit || r.linked}
+                    mono money value={r.marketPrice} placeholder={effectiveCanEdit ? "add" : "—"}
                     onSave={(v) => save(r.id, { marketPrice: v })}
                   />
                   {r.linked && (
@@ -632,7 +721,7 @@ export default function Dashboard({
                 </td>
                 <td><span className={`roi-pill ${r.bucket}`}>{pct(r.grossRoi)}</span></td>
                 <td style={{ whiteSpace: "nowrap" }}>
-                  {canEdit && (
+                  {effectiveCanEdit && (
                     <button
                       className="row-remove"
                       onClick={() => remove(r.id, r.productName)}
@@ -650,10 +739,12 @@ export default function Dashboard({
         {visible.length === 0 && (
           <div className="empty">
             {rows.length === 0
-              ? canEdit
+              ? effectiveCanEdit
                 ? `No ${RETAILERS[retailer].label} SKUs yet. Paste a product link above to add your first.`
                 : `No ${RETAILERS[retailer].label} SKUs are being tracked yet.`
-              : "No SKUs in this ROI range."}
+              : searchQuery.trim()
+                ? "No SKUs match your search."
+                : "No SKUs match the current filters."}
           </div>
         )}
       </div>
@@ -662,11 +753,12 @@ export default function Dashboard({
         <ProductDetail
           row={detailFor}
           retailer={retailer}
-          canEdit={canEdit}
+          canEdit={effectiveCanEdit}
           onSave={save}
           onClose={() => setDetailFor(null)}
         />
       )}
+      {auditOpen && <AuditHistory onClose={() => setAuditOpen(false)} />}
     </>
   );
 }

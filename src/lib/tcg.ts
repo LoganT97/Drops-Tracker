@@ -107,6 +107,13 @@ export type SyncResult = {
   requests: number;
 };
 
+export type SyncProgressUpdate = {
+  percent: number;
+  stage: string;
+  processedGroups?: number;
+  totalGroups?: number;
+};
+
 /**
  * Pull sealed products and their market prices into TcgProduct, then push
  * fresh prices onto any Product row that's been linked to one.
@@ -114,7 +121,11 @@ export type SyncResult = {
  * Safe to call repeatedly — it no-ops when TCGCSV hasn't rebuilt since the
  * last successful run, unless force is set.
  */
-export async function syncTcgPrices(force = false): Promise<SyncResult> {
+export async function syncTcgPrices(
+  force = false,
+  onProgress?: (progress: SyncProgressUpdate) => void,
+): Promise<SyncResult> {
+  onProgress?.({ percent: 2, stage: "Checking TCGCSV for new prices…" });
   const state = await prisma.syncState.findUnique({ where: { id: "tcgcsv" } });
   const stamp = await fetchStamp();
   let requests = 1;
@@ -138,6 +149,7 @@ export async function syncTcgPrices(force = false): Promise<SyncResult> {
 
   const categories = await get<Category[]>("/categories");
   requests++;
+  onProgress?.({ percent: 6, stage: "Loading TCGplayer categories…" });
 
   const wanted = categories.filter((c) => TRACKED.includes(c.name.trim().toLowerCase()));
 
@@ -158,7 +170,10 @@ export async function syncTcgPrices(force = false): Promise<SyncResult> {
   let groupCount = 0;
   let productCount = 0;
 
-  for (const category of wanted) {
+  let processedGroups = 0;
+  let knownGroups = 0;
+
+  for (const [categoryIndex, category] of wanted.entries()) {
     await sleep(THROTTLE_MS);
     const groups = await get<Group[]>(`/${category.categoryId}/groups`);
     requests++;
@@ -167,10 +182,17 @@ export async function syncTcgPrices(force = false): Promise<SyncResult> {
       const published = new Date(g.publishedOn);
       return isNaN(published.getTime()) || published >= cutoff;
     });
+    knownGroups += recent.length;
+    onProgress?.({
+      percent: 8 + (categoryIndex / Math.max(wanted.length, 1)) * 82,
+      stage: `Scanning ${category.displayName ?? category.name}…`,
+      processedGroups,
+      totalGroups: knownGroups,
+    });
 
     log(`${category.name}: ${recent.length} of ${groups.length} sets are recent enough`);
 
-    for (const group of recent) {
+    for (const [groupIndex, group] of recent.entries()) {
       let products: Product[];
       let prices: Price[];
 
@@ -184,6 +206,7 @@ export async function syncTcgPrices(force = false): Promise<SyncResult> {
         requests++;
       } catch (e) {
         log(`  skipped ${group.name}: ${(e as Error).message}`);
+        processedGroups++;
         continue; // one bad set shouldn't kill the whole run
       }
 
@@ -200,12 +223,15 @@ export async function syncTcgPrices(force = false): Promise<SyncResult> {
       }
 
       const sealed = products.filter(isSealed);
-      if (sealed.length === 0) continue;
+      if (sealed.length === 0) {
+        processedGroups++;
+        continue;
+      }
 
       groupCount++;
       log(`  ${group.name}: ${sealed.length} sealed of ${products.length} products`);
 
-      for (const p of sealed) {
+      for (const [productIndex, p] of sealed.entries()) {
         const marketPrice = priceFor.get(p.productId) ?? null;
         const row = {
           name: p.name,
@@ -226,12 +252,28 @@ export async function syncTcgPrices(force = false): Promise<SyncResult> {
           update: row,
         });
         productCount++;
+        const categoryShare = (
+          groupIndex + (productIndex + 1) / Math.max(sealed.length, 1)
+        ) / Math.max(recent.length, 1);
+        onProgress?.({
+          percent: 8 + ((categoryIndex + categoryShare) / Math.max(wanted.length, 1)) * 82,
+          stage: `Scanning ${group.name}…`,
+          processedGroups,
+          totalGroups: knownGroups,
+        });
       }
+      processedGroups++;
     }
   }
 
   log(`cached ${productCount} sealed products across ${groupCount} sets in ${requests} requests`);
 
+  onProgress?.({
+    percent: 94,
+    stage: "Updating linked SKUs…",
+    processedGroups,
+    totalGroups: processedGroups,
+  });
   const linkedUpdated = await applyPricesToProducts();
   log(`refreshed name/photo/price on ${linkedUpdated} tracked SKUs`);
 
@@ -254,6 +296,7 @@ export async function syncTcgPrices(force = false): Promise<SyncResult> {
     },
   });
 
+  onProgress?.({ percent: 100, stage: "Sync complete", processedGroups, totalGroups: processedGroups });
   return { skipped: false, groups: groupCount, products: productCount, linkedUpdated, requests };
 }
 

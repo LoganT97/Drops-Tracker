@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { syncTcgPrices } from "@/lib/tcg";
+import { beginTcgSync, finishTcgSync, updateTcgSync } from "@/lib/tcg-sync-progress";
 
 /** A full sync walks a few hundred sets — give it room. */
 export const maxDuration = 800;
@@ -22,11 +23,18 @@ export async function POST(req: Request) {
   }
 
   const force = new URL(req.url).searchParams.get("force") === "1";
+  const runId = beginTcgSync();
+  if (!runId) {
+    return NextResponse.json({ error: "A TCGplayer sync is already running." }, { status: 409 });
+  }
 
   try {
-    return NextResponse.json(await syncTcgPrices(force));
+    const result = await syncTcgPrices(force, (progress) => updateTcgSync(runId, progress));
+    finishTcgSync(runId);
+    return NextResponse.json(result);
   } catch (e) {
     const message = (e as Error).message;
+    finishTcgSync(runId, message);
     await prisma.syncState.upsert({
       where: { id: "tcgcsv" },
       create: { id: "tcgcsv", lastError: message },

@@ -26,8 +26,6 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
   const meta = RETAILERS[retailer];
 
   const [form, setForm] = useState(blank);
-  const [bulk, setBulk] = useState("");
-  const [mode, setMode] = useState<"one" | "bulk">("one");
   const [status, setStatus] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -145,16 +143,37 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
   async function post(payload: unknown) {
     setBusy(true);
     setStatus(null);
-    const res = await fetch("/api/products", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const json = await res.json();
+    let res: Response;
+    try {
+      res = await fetch("/api/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      setBusy(false);
+      setStatus("Couldn't reach the server. Check that the local server is still running.");
+      return false;
+    }
+
+    const text = await res.text();
+    let json: { saved?: number; problems?: string[]; error?: string } = {};
+    if (text) {
+      try {
+        json = JSON.parse(text);
+      } catch {
+        // Next.js may return an HTML or empty response when a server route
+        // crashes. Keep the form alive and show a useful message instead.
+      }
+    }
     setBusy(false);
 
     if (!res.ok && !json.saved) {
-      setStatus(json.problems?.join(" ") ?? json.error ?? "Nothing was saved.");
+      setStatus(
+        json.problems?.join(" ")
+          ?? json.error
+          ?? `The server couldn't add this SKU (${res.status}). Check the server console for the underlying error.`,
+      );
       return false;
     }
     setStatus(
@@ -181,39 +200,9 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
     }
   }
 
-  /** One product per line: sku, name, brand, retail, market */
-  async function addBulk() {
-    const rows = bulk
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const [sku, productName, brand, retailPrice, marketPrice, prerelease] = line
-          .split(/\t|,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
-          .map((c) => c.replace(/^"|"$/g, "").trim());
-        return {
-          retailer,
-          sku,
-          productName,
-          brand: (BRANDS as readonly string[]).includes(brand) ? brand : guessBrand(productName ?? ""),
-          retailPrice,
-          marketPrice,
-          prerelease: ["true", "yes", "prerelease", "pre-release"].includes((prerelease ?? "").toLowerCase()),
-        };
-      });
-
-    if (await post({ rows })) setBulk("");
-  }
-
   return (
     <div className="panel" style={{ padding: 18, marginBottom: 24 }}>
-      <div className="tabs">
-        <button className={mode === "one" ? "tab on" : "tab"} onClick={() => setMode("one")}>Add one</button>
-        <button className={mode === "bulk" ? "tab on" : "tab"} onClick={() => setMode("bulk")}>Paste a list</button>
-      </div>
-
-      {mode === "one" ? (
-        <>
+      <>
           <div className="field" style={{ marginBottom: 14 }}>
             <label htmlFor="link">Paste a {meta.label} product link</label>
             <input
@@ -319,24 +308,7 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
               ))}
             </ul>
           )}
-        </>
-      ) : (
-        <div>
-          <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
-            One product per line, comma or tab separated:{" "}
-            <span className="num">{meta.skuLabel.toLowerCase()}, name, brand, retail, market, prerelease</span>.
-            Everything here goes on the {meta.label} board.
-          </p>
-          <textarea
-            className="bulk" rows={6} value={bulk}
-            onChange={(e) => setBulk(e.target.value)}
-            placeholder={"95225595, First Partners Illustration Collection, Pokemon, 15.99, 60.75\n95082118, Ascended Heroes Elite Trainer Box, Pokemon, 59.99, 167.51"}
-          />
-          <button className="primary-btn" onClick={addBulk} disabled={busy || !bulk.trim()}>
-            {busy ? "Importing…" : "Import rows"}
-          </button>
-        </div>
-      )}
+      </>
 
       {status && <p style={{ color: "var(--red)", fontSize: 13, marginBottom: 0 }}>{status}</p>}
     </div>

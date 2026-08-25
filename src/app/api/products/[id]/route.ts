@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { BRANDS } from "@/lib/retailers";
 import { recordSnapshot } from "@/lib/history";
+import { buildChanges, recordAudit } from "@/lib/audit";
 
 /** Inline edits from the table land here — one field at a time is fine. */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -27,6 +28,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     data.brand = body.brand;
   }
   if (body.prerelease !== undefined) data.prerelease = body.prerelease === true;
+  if (body.releaseDate !== undefined) {
+    const text = String(body.releaseDate ?? "").trim();
+    if (!text) data.releaseDate = null;
+    else if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(new Date(`${text}T00:00:00.000Z`).getTime())) {
+      return NextResponse.json({ error: "Release date must be a valid date." }, { status: 400 });
+    } else data.releaseDate = new Date(`${text}T00:00:00.000Z`);
+  }
   for (const field of ["retailPrice", "marketPrice"]) {
     if (body[field] !== undefined) {
       const n = Number(body[field]);
@@ -50,7 +58,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: "Retail price can't be blank." }, { status: 400 });
   }
 
+  const before = await prisma.product.findUniqueOrThrow({ where: { id } });
   const updated = await prisma.product.update({ where: { id }, data });
+  await recordAudit({
+    productId: id,
+    actorId: session.user.id,
+    actorName: session.user.name ?? "Admin",
+    action: "updated",
+    changes: buildChanges(before as unknown as Record<string, unknown>, data),
+  });
 
   // Manual price edits build history too, so unlinked SKUs still get a chart.
   if (data.marketPrice !== undefined || data.retailPrice !== undefined) {
@@ -73,5 +89,12 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
 
   const { id } = await params;
   await prisma.product.update({ where: { id }, data: { active: false } });
+  await recordAudit({
+    productId: id,
+    actorId: session.user.id,
+    actorName: session.user.name ?? "Admin",
+    action: "removed",
+    changes: { active: { from: true, to: false } },
+  });
   return NextResponse.json({ ok: true });
 }

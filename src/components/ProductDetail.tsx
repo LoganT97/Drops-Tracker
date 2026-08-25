@@ -29,6 +29,7 @@ export default function ProductDetail({
   const [error, setError] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState(row.productName);
   const [prerelease, setPrerelease] = useState(row.prerelease);
+  const [releaseDate, setReleaseDate] = useState(row.releaseDate ?? "");
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +61,12 @@ export default function ProductDetail({
     const previous = prerelease;
     setPrerelease(next);
     if (!(await onSave(row.id, { prerelease: next }))) setPrerelease(previous);
+  }
+
+  async function saveReleaseDate(next: string) {
+    const previous = releaseDate;
+    setReleaseDate(next);
+    if (!(await onSave(row.id, { releaseDate: next || null }))) setReleaseDate(previous);
   }
 
   return (
@@ -106,6 +113,20 @@ export default function ProductDetail({
           <button className="ghost-btn" style={{ width: "auto" }} onClick={onClose}>Close</button>
         </div>
 
+        <div className="detail-release-date">
+          <span className="stat-label">Release date</span>
+          {canEdit ? (
+            <input
+              type="date"
+              value={releaseDate}
+              onChange={(e) => void saveReleaseDate(e.target.value)}
+              aria-label="Release date"
+            />
+          ) : (
+            <span className="num">{releaseDate || "Not set"}</span>
+          )}
+        </div>
+
         <div className="detail-stats">
           <Stat label="Retail" value={money(row.retailPrice)} />
           <Stat label="Retail + tax" value={money(row.cost)} />
@@ -138,6 +159,7 @@ export default function ProductDetail({
         )}
 
         {priced.length > 1 && <Chart points={priced} cost={row.cost} />}
+
       </div>
     </div>
   );

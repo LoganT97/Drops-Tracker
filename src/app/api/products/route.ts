@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { BRANDS, isRetailer } from "@/lib/retailers";
 import { recordSnapshot } from "@/lib/history";
+import { buildChanges, recordAudit } from "@/lib/audit";
 
 /**
  * Blank means "not priced yet", not zero.
@@ -16,6 +17,14 @@ function parsePrice(value: unknown): number | null {
   if (trimmed === "") return null;
   const n = Number(trimmed.replace(/[$,]/g, ""));
   return Number.isFinite(n) ? n : null;
+}
+
+function parseDate(value: unknown): Date | null {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  const date = new Date(`${text}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 export async function GET() {
@@ -71,12 +80,14 @@ export async function POST(req: Request) {
       productUrl: row.productUrl?.trim() || null,
       notes: row.notes?.trim() || null,
       prerelease: row.prerelease === true || String(row.prerelease ?? "").toLowerCase() === "true",
+      releaseDate: parseDate(row.releaseDate),
       tcgProductId: Number.isInteger(row.tcgProductId) ? row.tcgProductId : null,
       tcgCategoryId: Number.isInteger(row.tcgCategoryId) ? row.tcgCategoryId : null,
       tcgGroupId: Number.isInteger(row.tcgGroupId) ? row.tcgGroupId : null,
       pricedAt: new Date(),
     };
 
+    const existing = await prisma.product.findUnique({ where: { retailer_sku: { retailer, sku } } });
     const product = await prisma.product.upsert({
       where: { retailer_sku: { retailer, sku } },
       create: { ...data, createdById: session.user.id },
@@ -84,6 +95,13 @@ export async function POST(req: Request) {
     });
 
     await recordSnapshot(product.id, data.marketPrice, retailPrice);
+    await recordAudit({
+      productId: product.id,
+      actorId: session.user.id,
+      actorName: session.user.name ?? "Admin",
+      action: existing ? "updated" : "created",
+      changes: buildChanges(existing as unknown as Record<string, unknown> | null, data),
+    });
     saved.push(product);
   }
 

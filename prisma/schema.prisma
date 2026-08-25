@@ -26,7 +26,8 @@ model User {
   marketplaceFeePct Decimal @default(0.0) @db.Decimal(6, 5) // 0.1275 = 12.75%
   shippingCost      Decimal @default(0.0) @db.Decimal(10, 2)
 
-  products Product[] @relation("ProductCreatedBy")
+  products  Product[]  @relation("ProductCreatedBy")
+  auditLogs AuditLog[] @relation("AuditActor")
 }
 
 enum Role {
@@ -60,11 +61,12 @@ model Product {
   imageUrl    String?
   productUrl  String?
 
-  retailPrice Decimal  @db.Decimal(10, 2)
-  marketPrice Decimal? @db.Decimal(10, 2)
+  retailPrice Decimal   @db.Decimal(10, 2)
+  marketPrice Decimal?  @db.Decimal(10, 2)
   notes       String?
   /// Manually mark products that have not reached their general release date.
-  prerelease  Boolean  @default(false)
+  prerelease  Boolean   @default(false)
+  releaseDate DateTime? @db.Date
 
   /// Link to a TCGplayer product. When set, the nightly sync overwrites
   /// marketPrice automatically. Leave null to keep typing prices by hand.
@@ -77,6 +79,7 @@ model Product {
   pricedAt DateTime @default(now())
 
   snapshots PriceSnapshot[]
+  auditLogs AuditLog[]
 
   createdById String?
   createdBy   User?    @relation("ProductCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
@@ -85,6 +88,20 @@ model Product {
 
   @@unique([retailer, sku])
   @@index([active])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  actorId   String?
+  actor     User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorName String
+  action    String
+  changes   Json?
+  createdAt DateTime @default(now())
+
+  @@index([productId, createdAt])
 }
 
 // ---------- TCGplayer price cache ----------

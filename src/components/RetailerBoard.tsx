@@ -41,6 +41,7 @@ export default async function RetailerBoard({ retailer }: { retailer: RetailerKe
       productUrl: p.productUrl,
       notes: p.notes,
       prerelease: p.prerelease,
+      releaseDate: p.releaseDate?.toISOString().slice(0, 10) ?? null,
       retailPrice,
       marketPrice,
       linked: p.tcgProductId != null,
