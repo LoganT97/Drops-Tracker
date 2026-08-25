@@ -103,6 +103,7 @@ model TcgProduct {
   url          String?
   marketPrice  Decimal?  @db.Decimal(10, 2)
   pricedAt     DateTime?
+  isPresale    Boolean   @default(false)
 
   @@index([name])
   @@index([categoryId])

@@ -13,6 +13,7 @@ type TcgMatch = {
   groupName: string;
   imageUrl: string | null;
   marketPrice: number | null;
+  isPresale: boolean;
 };
 
 const blank = () => ({
@@ -136,6 +137,7 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
       imageUrl: match.imageUrl ?? f.imageUrl,
       marketPrice: match.marketPrice != null ? String(match.marketPrice) : f.marketPrice,
       brand: guessBrand(match.name) || f.brand,
+      prerelease: f.prerelease || match.isPresale,
     }));
     setHint(null);
   }
@@ -292,7 +294,8 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
                 <img className="thumb" src={linked.imageUrl} alt="" style={{ marginRight: 8, verticalAlign: "middle" }} />
               )}
               Linked to <strong>{linked.name}</strong> ({linked.groupName}) — photo and market
-              price refresh nightly; you can customize the displayed name.{" "}
+              price refresh nightly{linked.isPresale ? "; marked prerelease by TCGplayer" : ""};
+              you can customize the displayed name.{" "}
               <button className="unlink" onClick={() => setLinked(null)}>unlink</button>
             </p>
           )}
@@ -309,6 +312,7 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
                     <span className="muted" style={{ fontSize: 11 }}>
                       {m.categoryName} · {m.groupName}
                       {m.marketPrice != null && ` · $${m.marketPrice.toFixed(2)}`}
+                      {m.isPresale && " · Presale"}
                     </span>
                   </button>
                 </li>

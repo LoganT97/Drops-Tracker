@@ -22,6 +22,7 @@ export async function GET(req: Request) {
       groupName: r.groupName,
       imageUrl: r.imageUrl,
       marketPrice: r.marketPrice != null ? Number(r.marketPrice) : null,
+      isPresale: r.isPresale,
     })),
   );
 }

@@ -67,6 +67,7 @@ type Product = {
   url?: string;
   categoryId: number;
   groupId: number;
+  presaleInfo?: { isPresale?: boolean; releasedOn?: string | null; note?: string | null };
   extendedData?: Array<{ name: string; value: string }>;
 };
 type Price = {
@@ -213,6 +214,7 @@ export async function syncTcgPrices(force = false): Promise<SyncResult> {
           url: p.url ?? null,
           marketPrice,
           pricedAt: marketPrice != null ? new Date() : null,
+          isPresale: p.presaleInfo?.isPresale === true,
         };
 
         await prisma.tcgProduct.upsert({
@@ -267,6 +269,7 @@ export async function applyPricesToProducts(): Promise<number> {
       marketPrice: true,
       retailPrice: true,
       imageUrl: true,
+      prerelease: true,
     },
   });
 
@@ -275,7 +278,7 @@ export async function applyPricesToProducts(): Promise<number> {
   for (const product of linked) {
     const cached = await prisma.tcgProduct.findUnique({
       where: { productId: product.tcgProductId! },
-      select: { marketPrice: true, imageUrl: true },
+      select: { marketPrice: true, imageUrl: true, isPresale: true },
     });
     if (!cached) continue;
 
@@ -291,6 +294,12 @@ export async function applyPricesToProducts(): Promise<number> {
 
     if (cached.imageUrl && cached.imageUrl !== product.imageUrl) {
       data.imageUrl = cached.imageUrl;
+    }
+
+    // TCGCSV is authoritative when it says an item is presale. Never
+    // automatically clear a manual flag when TCGCSV later says false.
+    if (cached.isPresale && !product.prerelease) {
+      data.prerelease = true;
     }
 
     // Snapshot today's price even when nothing changed — a flat line is
@@ -351,6 +360,7 @@ export async function searchTcgProducts(query: string, limit = 20) {
     groupName: true,
     marketPrice: true,
     imageUrl: true,
+    isPresale: true,
   } as const;
 
   // Every meaningful word must appear somewhere in the name, in any order.
