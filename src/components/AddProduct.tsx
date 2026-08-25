@@ -14,11 +14,12 @@ type TcgMatch = {
   imageUrl: string | null;
   marketPrice: number | null;
   isPresale: boolean;
+  releaseDate: string | null;
 };
 
 const blank = () => ({
   sku: "", productName: "", brand: "Pokemon" as string,
-  retailPrice: "", marketPrice: "", imageUrl: "", productUrl: "", prerelease: false,
+  retailPrice: "", marketPrice: "", imageUrl: "", productUrl: "", prerelease: false, releaseDate: "",
 });
 
 export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
@@ -136,6 +137,7 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
       marketPrice: match.marketPrice != null ? String(match.marketPrice) : f.marketPrice,
       brand: guessBrand(match.name) || f.brand,
       prerelease: match.isPresale,
+      releaseDate: match.releaseDate ? match.releaseDate.slice(0, 10) : "",
     }));
     setHint(null);
   }

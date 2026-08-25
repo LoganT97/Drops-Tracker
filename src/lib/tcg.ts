@@ -88,6 +88,13 @@ function isSealed(p: Product) {
   return !keys.has("Rarity") && !keys.has("Number");
 }
 
+function parseReleaseDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
 /** TCGCSV's build timestamp. Cheap call — skip the whole sync if unchanged. */
 async function fetchStamp(): Promise<string> {
   const res = await fetch("https://tcgcsv.com/last-updated.txt", {
@@ -135,7 +142,7 @@ export async function syncTcgPrices(
   // presaleSyncedAt was added after the original cache. A null value means
   // old rows still contain the database default rather than TCGCSV's status,
   // so perform one complete backfill even when today's stamp is unchanged.
-  if (!force && state?.lastStamp === stamp && state.presaleSyncedAt) {
+  if (!force && state?.lastStamp === stamp && state.presaleSyncedAt && state.releaseDateSyncedAt) {
     log("already up to date, skipping");
     return {
       skipped: true,
@@ -244,6 +251,7 @@ export async function syncTcgPrices(
           marketPrice,
           pricedAt: marketPrice != null ? new Date() : null,
           isPresale: p.presaleInfo?.isPresale === true,
+          releaseDate: parseReleaseDate(p.presaleInfo?.releasedOn),
         };
 
         await prisma.tcgProduct.upsert({
@@ -284,6 +292,7 @@ export async function syncTcgPrices(
       lastStamp: stamp,
       lastSyncedAt: new Date(),
       presaleSyncedAt: new Date(),
+      releaseDateSyncedAt: new Date(),
       productCount,
       lastError: null,
     },
@@ -291,6 +300,7 @@ export async function syncTcgPrices(
       lastStamp: stamp,
       lastSyncedAt: new Date(),
       presaleSyncedAt: new Date(),
+      releaseDateSyncedAt: new Date(),
       productCount,
       lastError: null,
     },
@@ -318,6 +328,7 @@ export async function applyPricesToProducts(): Promise<number> {
       retailPrice: true,
       imageUrl: true,
       prerelease: true,
+      releaseDate: true,
     },
   });
 
@@ -326,7 +337,7 @@ export async function applyPricesToProducts(): Promise<number> {
   for (const product of linked) {
     const cached = await prisma.tcgProduct.findUnique({
       where: { productId: product.tcgProductId! },
-      select: { marketPrice: true, imageUrl: true, isPresale: true },
+      select: { marketPrice: true, imageUrl: true, isPresale: true, releaseDate: true },
     });
     if (!cached) continue;
 
@@ -349,6 +360,10 @@ export async function applyPricesToProducts(): Promise<number> {
     if (cached.isPresale !== product.prerelease) {
       data.prerelease = cached.isPresale;
     }
+
+    const cachedRelease = cached.releaseDate?.toISOString().slice(0, 10) ?? null;
+    const productRelease = product.releaseDate?.toISOString().slice(0, 10) ?? null;
+    if (cachedRelease !== productRelease) data.releaseDate = cached.releaseDate;
 
     // Snapshot today's price even when nothing changed — a flat line is
     // information too, and a gap would look like missing data.
@@ -409,6 +424,7 @@ export async function searchTcgProducts(query: string, limit = 20) {
     marketPrice: true,
     imageUrl: true,
     isPresale: true,
+    releaseDate: true,
   } as const;
 
   // Every meaningful word must appear somewhere in the name, in any order.

@@ -23,6 +23,7 @@ export async function GET(req: Request) {
       imageUrl: r.imageUrl,
       marketPrice: r.marketPrice != null ? Number(r.marketPrice) : null,
       isPresale: r.isPresale,
+      releaseDate: r.releaseDate?.toISOString().slice(0, 10) ?? null,
     })),
   );
 }

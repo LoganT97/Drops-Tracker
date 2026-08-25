@@ -708,6 +708,20 @@ input:focus, select:focus { outline: 2px solid var(--mint); outline-offset: 1px;
 
 .product-name-cell .prerelease-badge { margin-left: 0; }
 
+.prerelease-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.prerelease-date {
+  color: var(--amber);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .prerelease-badge {
   display: inline-block;
   margin-left: 8px;
