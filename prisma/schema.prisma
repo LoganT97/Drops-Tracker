@@ -112,11 +112,12 @@ model TcgProduct {
 /// One row. Tracks TCGCSV's build timestamp so we skip syncing when nothing
 /// upstream has changed.
 model SyncState {
-  id           String    @id @default("tcgcsv")
-  lastStamp    String?
-  lastSyncedAt DateTime?
-  productCount Int       @default(0)
-  lastError    String?
+  id              String    @id @default("tcgcsv")
+  lastStamp       String?
+  lastSyncedAt    DateTime?
+  presaleSyncedAt DateTime?
+  productCount    Int       @default(0)
+  lastError       String?
 }
 
 /// One row per product per day. Written by the nightly sync and whenever

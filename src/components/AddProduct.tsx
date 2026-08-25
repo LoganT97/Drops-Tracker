@@ -137,7 +137,7 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
       imageUrl: match.imageUrl ?? f.imageUrl,
       marketPrice: match.marketPrice != null ? String(match.marketPrice) : f.marketPrice,
       brand: guessBrand(match.name) || f.brand,
-      prerelease: f.prerelease || match.isPresale,
+      prerelease: match.isPresale,
     }));
     setHint(null);
   }

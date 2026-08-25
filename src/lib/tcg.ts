@@ -121,7 +121,10 @@ export async function syncTcgPrices(force = false): Promise<SyncResult> {
 
   log(`TCGCSV build ${stamp}; last synced ${state?.lastStamp ?? "never"}`);
 
-  if (!force && state?.lastStamp === stamp) {
+  // presaleSyncedAt was added after the original cache. A null value means
+  // old rows still contain the database default rather than TCGCSV's status,
+  // so perform one complete backfill even when today's stamp is unchanged.
+  if (!force && state?.lastStamp === stamp && state.presaleSyncedAt) {
     log("already up to date, skipping");
     return {
       skipped: true,
@@ -238,12 +241,14 @@ export async function syncTcgPrices(force = false): Promise<SyncResult> {
       id: "tcgcsv",
       lastStamp: stamp,
       lastSyncedAt: new Date(),
+      presaleSyncedAt: new Date(),
       productCount,
       lastError: null,
     },
     update: {
       lastStamp: stamp,
       lastSyncedAt: new Date(),
+      presaleSyncedAt: new Date(),
       productCount,
       lastError: null,
     },
@@ -296,10 +301,10 @@ export async function applyPricesToProducts(): Promise<number> {
       data.imageUrl = cached.imageUrl;
     }
 
-    // TCGCSV is authoritative when it says an item is presale. Never
-    // automatically clear a manual flag when TCGCSV later says false.
-    if (cached.isPresale && !product.prerelease) {
-      data.prerelease = true;
+    // Linked products follow TCGCSV in both directions, so the badge appears
+    // during presale and disappears automatically after release.
+    if (cached.isPresale !== product.prerelease) {
+      data.prerelease = cached.isPresale;
     }
 
     // Snapshot today's price even when nothing changed — a flat line is
