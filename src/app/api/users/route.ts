@@ -10,13 +10,14 @@ export async function GET() {
   }
 
   const users = await prisma.user.findMany({
-    orderBy: [{ lastLoginAt: "desc" }, { username: "asc" }],
+    orderBy: [{ lastActiveAt: "desc" }, { lastLoginAt: "desc" }, { username: "asc" }],
     select: {
       id: true,
       username: true,
       avatarUrl: true,
       role: true,
       lastLoginAt: true,
+      lastActiveAt: true,
       createdAt: true,
     },
   });

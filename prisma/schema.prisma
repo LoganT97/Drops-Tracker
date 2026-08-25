@@ -10,13 +10,14 @@ datasource db {
 // ---------- Auth ----------
 
 model User {
-  id          String    @id @default(cuid())
-  discordId   String    @unique
-  username    String
-  avatarUrl   String?
-  role        Role      @default(MEMBER)
-  lastLoginAt DateTime?
-  createdAt   DateTime  @default(now())
+  id           String    @id @default(cuid())
+  discordId    String    @unique
+  username     String
+  avatarUrl    String?
+  role         Role      @default(MEMBER)
+  lastLoginAt  DateTime?
+  lastActiveAt DateTime?
+  createdAt    DateTime  @default(now())
 
   // ROI settings — each person's own state and selling costs
   /// ZIP or Canadian postal code, used to look the tax rate up. Stored so a

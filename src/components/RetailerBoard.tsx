@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { computeRoi, roiBucket } from "@/lib/roi";
 import { RETAILERS, type RetailerKey } from "@/lib/retailers";
 import Dashboard, { type Row } from "@/components/Dashboard";
+import ActivityHeartbeat from "@/components/ActivityHeartbeat";
 
 /**
  * One board per retailer. Target and Walmart never share a list — separate
@@ -55,6 +56,7 @@ export default async function RetailerBoard({ retailer }: { retailer: RetailerKe
 
   return (
     <>
+      <ActivityHeartbeat />
       <header className="topbar">
         <nav className="store-nav">
           <Link className={retailer === "TARGET" ? "on" : ""} href="/target">Target</Link>

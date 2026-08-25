@@ -1068,6 +1068,7 @@ input:focus, select:focus { outline: 2px solid var(--mint); outline-offset: 1px;
   border-bottom: 1px solid rgba(35, 39, 46, 0.65);
 }
 .users-list li:last-child { border-bottom: 0; }
+.users-list li.online { background: linear-gradient(90deg, transparent, rgba(52, 229, 176, 0.025)); }
 .users-list img,
 .user-avatar-fallback {
   width: 36px;
@@ -1091,6 +1092,18 @@ input:focus, select:focus { outline: 2px solid var(--mint); outline-offset: 1px;
   gap: 3px;
 }
 .user-summary span { color: var(--muted); font-size: 11px; }
+.users-list li.online .user-summary span { color: var(--mint); }
+.presence-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: #4e5662;
+}
+.presence-dot.online {
+  background: var(--mint);
+  box-shadow: 0 0 0 3px var(--mint-dim);
+}
 .user-role {
   padding: 4px 8px;
   border-radius: 999px;
