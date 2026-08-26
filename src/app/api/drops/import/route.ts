@@ -4,18 +4,43 @@ import { prisma } from "@/lib/db";
 
 type ParsedDrop = { sku: string; date: string };
 
+function dateInCentralTime(now: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function shiftIsoDate(iso: string, days: number) {
+  const date = new Date(`${iso}T12:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 function parseDrops(text: string): ParsedDrop[] {
   const drops: ParsedDrop[] = [];
   const tcinPattern = /\bTcin\s*\r?\n\s*(\d{6,12})\b/gi;
+  const today = dateInCentralTime(new Date());
   let match: RegExpExecArray | null;
 
   while ((match = tcinPattern.exec(text))) {
     const before = text.slice(Math.max(0, match.index - 800), match.index);
     const dates = [...before.matchAll(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\s+\d{1,2}:\d{2}\s*(?:AM|PM)\b/gi)];
     const latest = dates.at(-1);
-    if (!latest) continue;
-    const [, month, day, year] = latest;
-    const iso = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    let iso: string | null = null;
+    if (latest) {
+      const [, month, day, year] = latest;
+      iso = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    } else {
+      const after = text.slice(match.index, Math.min(text.length, match.index + 800));
+      const relative = after.match(/\b(Today|Yesterday)\s+at\s+\d{1,2}:\d{2}\s*(?:AM|PM)\b/i);
+      if (relative) iso = relative[1].toLowerCase() === "yesterday" ? shiftIsoDate(today, -1) : today;
+    }
+    if (!iso) continue;
     const date = new Date(`${iso}T00:00:00.000Z`);
     if (!Number.isNaN(date.getTime())) drops.push({ sku: match[1], date: iso });
   }
