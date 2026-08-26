@@ -3,6 +3,25 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+const MAX_IMPORT_CHARS = 300_000;
+
+function splitImportText(value: string) {
+  if (value.length <= MAX_IMPORT_CHARS) return [value];
+
+  const chunks: string[] = [];
+  let start = 0;
+  while (start < value.length) {
+    let end = Math.min(start + MAX_IMPORT_CHARS, value.length);
+    if (end < value.length) {
+      const messageBoundary = value.lastIndexOf("\n[", end);
+      if (messageBoundary > start) end = messageBoundary + 1;
+    }
+    chunks.push(value.slice(start, end));
+    start = end;
+  }
+  return chunks;
+}
+
 export default function ImportDrops({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const [text, setText] = useState("");
@@ -27,26 +46,48 @@ export default function ImportDrops({ onClose }: { onClose: () => void }) {
     setResult(null);
     setError(null);
     try {
-      const response = await fetch("/api/drops/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
-      const json = await response.json();
-      setBusy(false);
-      if (!response.ok) {
-        setError(json.error ?? "The drop dates could not be imported.");
-        return;
+      const chunks = splitImportText(text);
+      let imported = 0;
+      let duplicatesIgnored = 0;
+      const untrackedSkus = new Set<string>();
+
+      for (let index = 0; index < chunks.length; index += 1) {
+        if (chunks.length > 1) setResult(`Importing batch ${index + 1} of ${chunks.length}…`);
+        const response = await fetch("/api/drops/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: chunks[index] }),
+        });
+        const responseText = await response.text();
+        let json: {
+          error?: string;
+          imported?: number;
+          duplicatesIgnored?: number;
+          untrackedSkus?: string[];
+        } = {};
+        try {
+          json = responseText ? JSON.parse(responseText) : {};
+        } catch {
+          // Proxies commonly return an HTML page for request-size and gateway errors.
+        }
+        if (!response.ok) {
+          throw new Error(json.error ?? `Import batch ${index + 1} failed (HTTP ${response.status}).`);
+        }
+        imported += json.imported ?? 0;
+        duplicatesIgnored += json.duplicatesIgnored ?? 0;
+        json.untrackedSkus?.forEach((sku) => untrackedSkus.add(sku));
       }
-      const untracked = json.untrackedSkus?.length
-        ? ` Untracked TCINs: ${json.untrackedSkus.join(", ")}.`
+
+      setBusy(false);
+      const untracked = untrackedSkus.size
+        ? ` Untracked TCINs: ${[...untrackedSkus].join(", ")}.`
         : "";
-      setResult(`${json.imported} drop dates imported. ${json.duplicatesIgnored} duplicate alerts ignored.${untracked}`);
+      setResult(`${imported} drop dates imported. ${duplicatesIgnored} duplicate alerts ignored.${untracked}`);
       setText("");
       router.refresh();
-    } catch {
+    } catch (cause) {
       setBusy(false);
-      setError("The import request failed.");
+      setError(cause instanceof Error ? cause.message : "The import request failed.");
     }
   }
 
