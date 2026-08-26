@@ -9,6 +9,7 @@ import EditableCell from "./EditableCell";
 import ProductDetail from "./ProductDetail";
 import AuditHistory from "./AuditHistory";
 import ActiveUsers from "./ActiveUsers";
+import ImportDrops from "./ImportDrops";
 
 export type Bucket = "negative" | "low" | "mid" | "high" | "unknown";
 type SyncProgress = {
@@ -39,6 +40,7 @@ export type Row = {
   prerelease: boolean;
   releaseDate: string | null;
   history: Array<{ date: string; marketPrice: number | null; retailPrice: number | null }>;
+  dropDates: string[];
   retailPrice: number | null;
   marketPrice: number | null;
   cost: number | null;
@@ -133,6 +135,7 @@ export default function Dashboard({
   const [backfilling, setBackfilling] = useState(false);
   const [backfillProgress, setBackfillProgress] = useState<BackfillProgress | null>(null);
   const [backfillNote, setBackfillNote] = useState<string | null>(null);
+  const [dropImportOpen, setDropImportOpen] = useState(false);
 
   useEffect(() => {
     if (!canEdit || !syncing) return;
@@ -451,6 +454,9 @@ export default function Dashboard({
             </button>
             <button className="ghost-btn active-users-button" onClick={() => setUsersOpen(true)}>
               Active Users
+            </button>
+            <button className="ghost-btn import-drops-button" onClick={() => setDropImportOpen(true)}>
+              Import Drops
             </button>
             <button className="ghost-btn admin-sync-button" onClick={syncPrices} disabled={syncing}>
               {syncing ? "Syncing prices…" : "Scan TCGplayer prices"}
@@ -839,6 +845,7 @@ export default function Dashboard({
       )}
       {auditOpen && <AuditHistory onClose={() => setAuditOpen(false)} />}
       {usersOpen && <ActiveUsers onClose={() => setUsersOpen(false)} />}
+      {dropImportOpen && <ImportDrops onClose={() => setDropImportOpen(false)} />}
     </>
   );
 }

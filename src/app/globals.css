@@ -97,6 +97,11 @@ h1.title .accent { color: var(--red); }
   min-height: 36px;
   padding: 7px 10px;
 }
+.admin-toolbar .import-drops-button {
+  width: 140px;
+  min-height: 36px;
+  padding: 7px 10px;
+}
 .admin-toolbar .admin-sync-button {
   width: 170px;
   min-height: 36px;
@@ -1067,6 +1072,23 @@ input:focus, select:focus { outline: 2px solid var(--mint); outline-offset: 1px;
 }
 
 .audit-modal { max-width: 820px; }
+.drop-import-modal { max-width: 720px; }
+.drop-import-textarea {
+  width: 100%;
+  min-height: 260px;
+  margin-bottom: 12px;
+  padding: 12px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.drop-import-textarea:focus { outline: 2px solid var(--mint); outline-offset: 1px; }
+.drop-import-result { color: var(--mint); font-size: 13px; }
 .users-modal { max-width: 620px; }
 .users-list {
   list-style: none;
@@ -1209,6 +1231,29 @@ input:focus, select:focus { outline: 2px solid var(--mint); outline-offset: 1px;
 .detail-history-head .detail-section { margin: 0; }
 .detail-history-head .ghost-btn { width: auto; flex-shrink: 0; }
 .detail-backfill-progress { margin: 0 0 16px; }
+.detail-drops {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.detail-drops ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.detail-drops li {
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.detail-drops p { margin: 0; font-size: 12px; }
 
 /* ---------- row selection ---------- */
 

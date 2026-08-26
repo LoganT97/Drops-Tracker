@@ -228,6 +228,23 @@ export default function ProductDetail({
 
         {priced.length > 1 && <Chart points={priced} cost={row.cost} releaseDate={releaseDate || null} />}
 
+        <section className="detail-drops">
+          <h3 className="detail-section">Recent drop dates</h3>
+          {row.dropDates.length > 0 ? (
+            <ol>
+              {row.dropDates.map((date) => (
+                <li key={date}>{new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
+                  month: "long",
+                  day: "numeric",
+                  year: "numeric",
+                })}</li>
+              ))}
+            </ol>
+          ) : (
+            <p className="muted">No drop dates imported yet.</p>
+          )}
+        </section>
+
       </div>
     </div>
   );
