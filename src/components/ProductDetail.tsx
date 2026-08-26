@@ -231,15 +231,19 @@ export default function ProductDetail({
         <section className="detail-drops">
           <h3 className="detail-section">Recent drop dates</h3>
           {row.dropDates.length > 0 ? (
-            <ol>
+            <div className="detail-stats detail-drop-stats">
               {row.dropDates.map((date) => (
-                <li key={date}>{new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
-                  month: "long",
-                  day: "numeric",
-                  year: "numeric",
-                })}</li>
+                <div className="stat drop-date-stat" key={date}>
+                  <div className="stat-value num">
+                    {new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
+                      month: "numeric",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </div>
+                </div>
               ))}
-            </ol>
+            </div>
           ) : (
             <p className="muted">No drop dates imported yet.</p>
           )}

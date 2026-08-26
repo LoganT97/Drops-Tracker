@@ -10,6 +10,18 @@ export default function ImportDrops({ onClose }: { onClose: () => void }) {
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  async function loadFile(file: File | undefined) {
+    if (!file) return;
+    setError(null);
+    setResult(null);
+    try {
+      setText(await file.text());
+      setResult(`Loaded ${file.name}.`);
+    } catch {
+      setError("That text export could not be read.");
+    }
+  }
+
   async function importDrops() {
     setBusy(true);
     setResult(null);
@@ -55,9 +67,19 @@ export default function ImportDrops({ onClose }: { onClose: () => void }) {
           placeholder="Paste Zephyr Target restock alerts here…"
           rows={12}
         />
-        <button className="primary-btn" onClick={importDrops} disabled={busy || !text.trim()}>
-          {busy ? "Importing…" : "Import dates"}
-        </button>
+        <div className="drop-import-actions">
+          <label className="ghost-btn drop-file-button">
+            Choose Discord export
+            <input
+              type="file"
+              accept=".txt,text/plain"
+              onChange={(event) => void loadFile(event.target.files?.[0])}
+            />
+          </label>
+          <button className="primary-btn" onClick={importDrops} disabled={busy || !text.trim()}>
+            {busy ? "Importing…" : "Import dates"}
+          </button>
+        </div>
         {result && <p className="drop-import-result">{result}</p>}
         {error && <p style={{ color: "var(--red)", fontSize: 13 }}>{error}</p>}
       </div>

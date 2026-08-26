@@ -1089,6 +1089,20 @@ input:focus, select:focus { outline: 2px solid var(--mint); outline-offset: 1px;
 }
 .drop-import-textarea:focus { outline: 2px solid var(--mint); outline-offset: 1px; }
 .drop-import-result { color: var(--mint); font-size: 13px; }
+.drop-import-actions { display: flex; align-items: center; gap: 10px; }
+.drop-file-button {
+  position: relative;
+  width: auto;
+  overflow: hidden;
+  text-align: center;
+}
+.drop-file-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
 .users-modal { max-width: 620px; }
 .users-list {
   list-style: none;
@@ -1236,23 +1250,18 @@ input:focus, select:focus { outline: 2px solid var(--mint); outline-offset: 1px;
   padding-top: 18px;
   border-top: 1px solid var(--line);
 }
-.detail-drops ol {
+.detail-drop-stats {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-bottom: 0;
+}
+.drop-date-stat {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  text-align: center;
 }
-.detail-drops li {
-  padding: 6px 9px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--bg);
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 11px;
-}
+.drop-date-stat .stat-value { white-space: nowrap; }
 .detail-drops p { margin: 0; font-size: 12px; }
 
 /* ---------- row selection ---------- */
