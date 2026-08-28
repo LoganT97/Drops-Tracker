@@ -16,7 +16,7 @@
   --prerelease: #f5a524;
   --prerelease-dim: rgba(245, 165, 36, 0.1);
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
-  --sans: var(--font-inter), "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 * { box-sizing: border-box; }
