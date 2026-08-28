@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { money, pct } from "@/lib/roi";
 import { BRANDS, RETAILERS, type RetailerKey } from "@/lib/retailers";
@@ -10,6 +10,10 @@ import ProductDetail from "./ProductDetail";
 import AuditHistory from "./AuditHistory";
 import ActiveUsers from "./ActiveUsers";
 import ImportDrops from "./ImportDrops";
+import AdminPanel from "./AdminPanel";
+import WatchlistHeart from "./WatchlistHeart";
+import { useToast } from "./ToastProvider";
+import LoadingSpinner from "./LoadingSpinner";
 
 export type Bucket = "negative" | "low" | "mid" | "high" | "unknown";
 type SyncProgress = {
@@ -41,6 +45,8 @@ export type Row = {
   releaseDate: string | null;
   history: Array<{ date: string; marketPrice: number | null; retailPrice: number | null }>;
   dropDates: string[];
+  lastDropDate: string | null;
+  watched: boolean;
   retailPrice: number | null;
   marketPrice: number | null;
   cost: number | null;
@@ -55,7 +61,7 @@ export type Row = {
   bucket: Bucket;
 };
 
-type SortKey = "productName" | "sku" | "retailPrice" | "cost" | "marketPrice" | "grossRoi" | "netProfit";
+type SortKey = "productName" | "sku" | "lastDropDate" | "retailPrice" | "cost" | "marketPrice" | "grossRoi" | "netProfit";
 
 const TILES: Array<{ key: Bucket | "all"; label: string; cls: string }> = [
   { key: "all", label: "All SKUs", cls: "all" },
@@ -92,6 +98,15 @@ function releaseDateLabel(date: string): string {
   });
 }
 
+function compactDate(date: string | null): string {
+  if (!date) return "—";
+  return new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
+    month: "numeric",
+    day: "numeric",
+    year: "2-digit",
+  });
+}
+
 export default function Dashboard({
   retailer,
   rows,
@@ -108,6 +123,7 @@ export default function Dashboard({
   lastSyncedAt: string | null;
 }) {
   const router = useRouter();
+  const { showToast } = useToast();
   const [pending, startTransition] = useTransition();
   const [viewMode, setViewMode] = useState<"admin" | "viewer">("admin");
   const effectiveCanEdit = canEdit && viewMode === "admin";
@@ -136,6 +152,14 @@ export default function Dashboard({
   const [backfillProgress, setBackfillProgress] = useState<BackfillProgress | null>(null);
   const [backfillNote, setBackfillNote] = useState<string | null>(null);
   const [dropImportOpen, setDropImportOpen] = useState(false);
+  const [adminPanelOpen, setAdminPanelOpen] = useState(false);
+  const [watchlistOnly, setWatchlistOnly] = useState(false);
+  const [watchedIds, setWatchedIds] = useState<Set<string>>(() => new Set(rows.filter((row) => row.watched).map((row) => row.id)));
+  const [watchBusyIds, setWatchBusyIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setWatchedIds(new Set(rows.filter((row) => row.watched).map((row) => row.id)));
+  }, [rows]);
 
   useEffect(() => {
     if (!canEdit || !syncing) return;
@@ -196,6 +220,7 @@ export default function Dashboard({
     if (minRoiPercent != null) {
       list = list.filter((r) => r.grossRoi != null && r.grossRoi * 100 >= minRoiPercent);
     }
+    if (watchlistOnly) list = list.filter((row) => watchedIds.has(row.id));
     const query = searchQuery.trim().toLocaleLowerCase();
     if (query) {
       list = list.filter((r) =>
@@ -214,11 +239,12 @@ export default function Dashboard({
         : (av as number) - (bv as number);
       return dir === "asc" ? cmp : -cmp;
     });
-  }, [rows, roiFilters, sort, selectedBrands, minProfit, minRoiPercent, searchQuery]);
+  }, [rows, roiFilters, sort, selectedBrands, minProfit, minRoiPercent, searchQuery, watchlistOnly, watchedIds]);
 
   function toggleRoiFilter(bucket: Bucket | "all") {
     if (bucket === "all") {
       setRoiFilters(new Set());
+      setWatchlistOnly(false);
       return;
     }
     setRoiFilters((previous) => {
@@ -246,6 +272,7 @@ export default function Dashboard({
     const list = selected.size > 0 ? rows.filter((r) => selected.has(r.id)) : visible;
     navigator.clipboard.writeText(formatSkuList(list.map((r) => r.sku)));
     setCopied("filtered");
+    showToast(`${list.length} SKU${list.length === 1 ? "" : "s"} copied.`);
     setTimeout(() => setCopied(null), 1600);
   }
 
@@ -291,6 +318,15 @@ export default function Dashboard({
     const list = bucket === "all" ? rows : rows.filter((r) => r.bucket === bucket);
     navigator.clipboard.writeText(formatSkuList(list.map((r) => r.sku)));
     setCopied(bucket);
+    showToast(`${list.length} SKU${list.length === 1 ? "" : "s"} copied.`);
+    setTimeout(() => setCopied(null), 1600);
+  }
+
+  function copyWatchlist() {
+    const list = rows.filter((row) => watchedIds.has(row.id));
+    navigator.clipboard.writeText(formatSkuList(list.map((row) => row.sku)));
+    setCopied("watchlist");
+    showToast(`${list.length} watchlist SKU${list.length === 1 ? "" : "s"} copied.`);
     setTimeout(() => setCopied(null), 1600);
   }
 
@@ -314,17 +350,59 @@ export default function Dashboard({
       body: JSON.stringify(patch),
     });
     if (!res.ok) {
-      setError((await res.json()).error ?? "That change didn't save.");
+      const message = (await res.json()).error ?? "That change didn't save.";
+      setError(message);
+      showToast(message, "error");
       return false;
     }
+    showToast("Product updated.");
     startTransition(() => router.refresh());
     return true;
   }
 
   async function remove(id: string, name: string) {
     if (!confirm(`Stop tracking ${name}?`)) return;
-    await fetch(`/api/products/${id}`, { method: "DELETE" });
+    const response = await fetch(`/api/products/${id}`, { method: "DELETE" });
+    if (!response.ok) return showToast("Couldn't remove that product.", "error");
+    showToast(`${name} removed.`);
     startTransition(() => router.refresh());
+  }
+
+  async function toggleWatchlist(id: string) {
+    if (watchBusyIds.has(id)) return;
+    const watched = !watchedIds.has(id);
+    setWatchBusyIds((current) => new Set(current).add(id));
+    setWatchedIds((current) => {
+      const next = new Set(current);
+      watched ? next.add(id) : next.delete(id);
+      return next;
+    });
+    try {
+      const response = await fetch(`/api/watchlist/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ watched }),
+      });
+      if (response.ok) {
+        showToast(watched ? "Added to your watchlist." : "Removed from your watchlist.");
+        return;
+      }
+      throw new Error();
+    } catch {
+      setWatchedIds((current) => {
+        const next = new Set(current);
+        watched ? next.delete(id) : next.add(id);
+        return next;
+      });
+      setError("Couldn't update your watchlist.");
+      showToast("Couldn't update your watchlist.", "error");
+    } finally {
+      setWatchBusyIds((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+    }
   }
 
   /** Pull fresh TCGplayer prices. Only refetches if TCGCSV has rebuilt. */
@@ -343,12 +421,15 @@ export default function Dashboard({
       setSyncing(false);
       setSyncProgress((current) => current ? { ...current, active: false, error: "The sync request failed." } : null);
       setSyncNote("The sync request failed. Check the server console.");
+      showToast("The TCGplayer sync request failed.", "error");
       return;
     }
     setSyncing(false);
 
     if (!res.ok) {
-      setSyncNote(typeof json.error === "string" ? json.error : "Sync failed.");
+      const message = typeof json.error === "string" ? json.error : "Sync failed.";
+      setSyncNote(message);
+      showToast(message, "error");
       return;
     }
     setSyncNote(
@@ -356,6 +437,7 @@ export default function Dashboard({
         ? "Already up to date — TCGCSV refreshes once a day."
         : `Cached ${json.products ?? 0} products. Updated ${json.linkedUpdated ?? 0} of your SKUs.`,
     );
+    showToast(json.skipped ? "TCGplayer prices are already current." : "TCGplayer prices updated.");
     startTransition(() => router.refresh());
   }
 
@@ -369,14 +451,18 @@ export default function Dashboard({
       const result = text ? JSON.parse(text) as { snapshots?: number; error?: string } : {};
       setBackfilling(false);
       if (!response.ok) {
-        setBackfillNote(result.error ?? "Price-history backfill failed.");
+        const message = result.error ?? "Price-history backfill failed.";
+        setBackfillNote(message);
+        showToast(message, "error");
         return;
       }
       setBackfillNote(`Imported ${result.snapshots ?? 0} historical price points. Temporary files were deleted.`);
+      showToast(`Imported ${result.snapshots ?? 0} historical price points.`);
       startTransition(() => router.refresh());
     } catch {
       setBackfilling(false);
       setBackfillNote("The backfill request failed. Check the server console.");
+      showToast("The price-history backfill request failed.", "error");
     }
   }
 
@@ -393,9 +479,11 @@ export default function Dashboard({
     });
     if (!res.ok) {
       setError("Couldn't save that setting.");
+      showToast("Couldn't save that setting.", "error");
       return;
     }
     setSavedField(field);
+    showToast("Setting saved.");
     setTimeout(() => setSavedField((f) => (f === field ? null : f)), 1800);
     startTransition(() => router.refresh());
   }
@@ -449,54 +537,13 @@ export default function Dashboard({
                 <option value="viewer">Viewer View</option>
               </select>
             </div>
-            <button className="ghost-btn audit-history-button" onClick={() => setAuditOpen(true)}>
-              Audit History
-            </button>
             <button className="ghost-btn active-users-button" onClick={() => setUsersOpen(true)}>
               Active Users
             </button>
-            <button className="ghost-btn import-drops-button" onClick={() => setDropImportOpen(true)}>
-              Import Drops
-            </button>
-            <button className="ghost-btn admin-sync-button" onClick={syncPrices} disabled={syncing}>
-              {syncing ? "Syncing prices…" : "Scan TCGplayer prices"}
-            </button>
-            <button className="ghost-btn admin-backfill-button" onClick={backfillAllPrices} disabled={backfilling}>
-              {backfilling ? "Backfilling…" : "Backfill All"}
+            <button className="admin-panel-button" onClick={() => setAdminPanelOpen(true)}>
+              Admin Panel
             </button>
           </div>
-          {syncNote && <p className="admin-sync-note">{syncNote}</p>}
-          {syncing && syncProgress && (
-            <div className="sync-progress admin-sync-progress" aria-live="polite">
-              <div className="sync-progress-head">
-                <span>{syncProgress.stage}</span>
-                <strong>{syncProgress.percent}%</strong>
-              </div>
-              <div className="sync-progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={syncProgress.percent}>
-                <span style={{ width: `${syncProgress.percent}%` }} />
-              </div>
-              {syncProgress.totalGroups > 0 && (
-                <span className="sync-progress-count">
-                  {syncProgress.processedGroups} of {syncProgress.totalGroups} sets processed
-                </span>
-              )}
-            </div>
-          )}
-          {backfillNote && <p className="admin-sync-note">{backfillNote}</p>}
-          {backfilling && backfillProgress && (
-            <div className="sync-progress admin-sync-progress" aria-live="polite">
-              <div className="sync-progress-head">
-                <span>{backfillProgress.stage}</span>
-                <strong>{backfillProgress.percent}%</strong>
-              </div>
-              <div className="sync-progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={backfillProgress.percent}>
-                <span style={{ width: `${backfillProgress.percent}%` }} />
-              </div>
-              <span className="sync-progress-count">
-                {backfillProgress.processedDays} of {backfillProgress.totalDays} days · {backfillProgress.snapshots} price points
-              </span>
-            </div>
-          )}
         </div>
       )}
 
@@ -504,22 +551,38 @@ export default function Dashboard({
 
       <div className="tiles">
         {TILES.map((t) => (
-          <div
-            key={t.key}
-            className={`tile ${t.cls}`}
-            aria-pressed={t.key === "all" ? roiFilters.size === 0 : roiFilters.has(t.key)}
-          >
-            <button
-              onClick={() => toggleRoiFilter(t.key)}
-              style={{ all: "unset", cursor: "pointer", display: "block", width: "100%" }}
+          <Fragment key={t.key}>
+            <div
+              className={`tile ${t.cls}`}
+              aria-pressed={t.key === "all" ? roiFilters.size === 0 && !watchlistOnly : roiFilters.has(t.key)}
             >
-              <div className="label">{t.label}</div>
-              <div className="count">{counts[t.key] ?? 0}</div>
-            </button>
-            <button className="ghost-btn" onClick={() => copySkus(t.key)}>
-              {copied === t.key ? "Copied" : "Copy all SKUs"}
-            </button>
-          </div>
+              <button
+                onClick={() => toggleRoiFilter(t.key)}
+                style={{ all: "unset", cursor: "pointer", display: "block", width: "100%" }}
+              >
+                <div className="label">{t.label}</div>
+                <div className="count">{counts[t.key] ?? 0}</div>
+              </button>
+              <button className="ghost-btn" onClick={() => copySkus(t.key)}>
+                {copied === t.key ? "Copied" : "Copy all SKUs"}
+              </button>
+            </div>
+
+            {t.key === "all" && (
+              <div className="tile watchlist" aria-pressed={watchlistOnly}>
+                <button
+                  onClick={() => setWatchlistOnly((current) => !current)}
+                  style={{ all: "unset", cursor: "pointer", display: "block", width: "100%" }}
+                >
+                  <div className="label"><WatchlistHeart filled /> My Watchlist</div>
+                  <div className="count">{watchedIds.size}</div>
+                </button>
+                <button className="ghost-btn" onClick={copyWatchlist} disabled={watchedIds.size === 0}>
+                  {copied === "watchlist" ? "Copied" : "Copy watchlist"}
+                </button>
+              </div>
+            )}
+          </Fragment>
         ))}
       </div>
 
@@ -688,7 +751,7 @@ export default function Dashboard({
 
       {error && <p style={{ color: "var(--red)", fontSize: 13 }}>{error}</p>}
 
-      <div className="panel sku-table-panel">
+      <div className={`panel sku-table-panel ${effectiveCanEdit ? "admin-table" : "viewer-table"}`}>
         <table>
           <thead>
             <tr>
@@ -700,30 +763,34 @@ export default function Dashboard({
                   aria-label="Select all visible SKUs"
                 />
               </th>
-              <th />
-              <th aria-sort={sort.key === "productName" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("productName")}>
+              <th className="watch-col"><span className="sr-only">Watchlist</span></th>
+              <th className="image-col" />
+              <th className="product-col" aria-sort={sort.key === "productName" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("productName")}>
                 Product {sortIndicator("productName")}
               </th>
-              <th className="hide-sm">Brand</th>
-              <th className="hide-sm" aria-sort={sort.key === "sku" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("sku")}>
+              <th className="hide-sm brand-col">Brand</th>
+              <th className="hide-sm sku-col" aria-sort={sort.key === "sku" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("sku")}>
                 {RETAILERS[retailer].skuLabel} {sortIndicator("sku")}
               </th>
-              <th aria-sort={sort.key === "retailPrice" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("retailPrice")}>
+              <th className="last-drop-col" aria-sort={sort.key === "lastDropDate" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("lastDropDate")}>
+                Last drop {sortIndicator("lastDropDate")}
+              </th>
+              <th className="retail-col" aria-sort={sort.key === "retailPrice" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("retailPrice")}>
                 Retail {sortIndicator("retailPrice")}
               </th>
-              <th aria-sort={sort.key === "cost" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("cost")}>
+              <th className="cost-col" aria-sort={sort.key === "cost" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("cost")}>
                 Retail (+tax) {sortIndicator("cost")}
               </th>
-              <th aria-sort={sort.key === "marketPrice" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("marketPrice")}>
+              <th className="market-col" aria-sort={sort.key === "marketPrice" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("marketPrice")}>
                 Market value {sortIndicator("marketPrice")}
               </th>
-              <th aria-sort={sort.key === "netProfit" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("netProfit")}>
+              <th className="profit-col" aria-sort={sort.key === "netProfit" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("netProfit")}>
                 Profit / box {sortIndicator("netProfit")}
               </th>
-              <th aria-sort={sort.key === "grossRoi" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("grossRoi")}>
+              <th className="roi-col" aria-sort={sort.key === "grossRoi" ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} onClick={() => toggleSort("grossRoi")}>
                 Potential ROI {sortIndicator("grossRoi")}
               </th>
-              <th />
+              {effectiveCanEdit && <th className="row-actions-col" />}
             </tr>
           </thead>
           <tbody>
@@ -738,7 +805,19 @@ export default function Dashboard({
                     aria-label={`Select ${r.productName}`}
                   />
                 </td>
-                <td>
+                <td className="watch-col">
+                  <button
+                    className={`watch-button ${watchedIds.has(r.id) ? "on" : ""}`}
+                    onClick={() => void toggleWatchlist(r.id)}
+                    aria-label={`${watchedIds.has(r.id) ? "Remove" : "Add"} ${r.productName} ${watchedIds.has(r.id) ? "from" : "to"} watchlist`}
+                    title={watchedIds.has(r.id) ? "Remove from watchlist" : "Add to watchlist"}
+                  >
+                    {watchBusyIds.has(r.id)
+                      ? <LoadingSpinner label="Updating watchlist" />
+                      : <WatchlistHeart filled={watchedIds.has(r.id)} />}
+                  </button>
+                </td>
+                <td className="image-col">
                   <ImageCell
                     url={r.imageUrl}
                     name={r.productName}
@@ -746,7 +825,7 @@ export default function Dashboard({
                     onSave={(v) => save(r.id, { imageUrl: v })}
                   />
                 </td>
-                <td>
+                <td className="product-col">
                   <div className="product-name-cell">
                     <button className="name-link" onClick={() => setDetailFor(r)}>
                       {r.productName}
@@ -759,7 +838,7 @@ export default function Dashboard({
                     )}
                   </div>
                 </td>
-                <td className="hide-sm">
+                <td className="hide-sm brand-col">
                   {effectiveCanEdit ? (
                     <select
                       className="cell-brand"
@@ -778,14 +857,17 @@ export default function Dashboard({
                     <span className="muted">{r.brand}</span>
                   )}
                 </td>
-                <td className="hide-sm">
+                <td className="hide-sm sku-col">
                   <EditableCell readOnly={!effectiveCanEdit} mono value={r.sku} onSave={(v) => save(r.id, { sku: v })} />
                 </td>
-                <td>
+                <td className="last-drop-col num muted" title={r.lastDropDate ? new Date(`${r.lastDropDate}T00:00:00`).toLocaleDateString() : "No imported drops"}>
+                  {compactDate(r.lastDropDate)}
+                </td>
+                <td className="retail-col">
                   <EditableCell readOnly={!effectiveCanEdit} mono money value={r.retailPrice} onSave={(v) => save(r.id, { retailPrice: v })} />
                 </td>
-                <td className="num muted">{money(r.cost)}</td>
-                <td>
+                <td className="cost-col num muted">{money(r.cost)}</td>
+                <td className="market-col">
                   <EditableCell
                     readOnly={!effectiveCanEdit || r.linked}
                     mono money value={r.marketPrice} placeholder={effectiveCanEdit ? "add" : "—"}
@@ -801,12 +883,12 @@ export default function Dashboard({
                   )}
                   <span className="priced-at" title={exact(r.pricedAt)}>{ago(r.pricedAt)}</span>
                 </td>
-                <td className={`num profit ${(r.netProfit ?? 0) >= 0 ? "pos" : "neg"}`}>
+                <td className={`profit-col num profit ${(r.netProfit ?? 0) >= 0 ? "pos" : "neg"}`}>
                   {money(r.netProfit)}
                 </td>
-                <td><span className={`roi-pill ${r.bucket}`}>{pct(r.grossRoi)}</span></td>
-                <td style={{ whiteSpace: "nowrap" }}>
-                  {effectiveCanEdit && (
+                <td className="roi-col"><span className={`roi-pill ${r.bucket}`}>{pct(r.grossRoi)}</span></td>
+                {effectiveCanEdit && (
+                  <td className="row-actions-col" style={{ whiteSpace: "nowrap" }}>
                     <button
                       className="row-remove"
                       onClick={() => remove(r.id, r.productName)}
@@ -814,8 +896,8 @@ export default function Dashboard({
                     >
                       ×
                     </button>
-                  )}
-                </td>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -829,6 +911,8 @@ export default function Dashboard({
                 : `No ${RETAILERS[retailer].label} SKUs are being tracked yet.`
               : searchQuery.trim()
                 ? "No SKUs match your search."
+                : watchlistOnly
+                  ? "Your watchlist is empty. Select a heart beside any product to add it."
                 : "No SKUs match the current filters."}
           </div>
         )}
@@ -839,6 +923,9 @@ export default function Dashboard({
           row={detailFor}
           retailer={retailer}
           canEdit={effectiveCanEdit}
+          watched={watchedIds.has(detailFor.id)}
+          watchBusy={watchBusyIds.has(detailFor.id)}
+          onToggleWatchlist={() => toggleWatchlist(detailFor.id)}
           onSave={save}
           onClose={() => setDetailFor(null)}
         />
@@ -846,6 +933,24 @@ export default function Dashboard({
       {auditOpen && <AuditHistory onClose={() => setAuditOpen(false)} />}
       {usersOpen && <ActiveUsers onClose={() => setUsersOpen(false)} />}
       {dropImportOpen && <ImportDrops onClose={() => setDropImportOpen(false)} />}
+      {adminPanelOpen && (
+        <AdminPanel
+          rows={rows}
+          syncing={syncing}
+          backfilling={backfilling}
+          syncNote={syncNote}
+          backfillNote={backfillNote}
+          syncProgress={syncProgress}
+          backfillProgress={backfillProgress}
+          onSync={() => void syncPrices()}
+          onBackfill={() => void backfillAllPrices()}
+          onOpenAudit={() => { setAdminPanelOpen(false); setAuditOpen(true); }}
+          onImportDrops={() => { setAdminPanelOpen(false); setDropImportOpen(true); }}
+          onOpenProduct={(row) => { setAdminPanelOpen(false); setDetailFor(row); }}
+          onDataChanged={() => startTransition(() => router.refresh())}
+          onClose={() => setAdminPanelOpen(false)}
+        />
+      )}
     </>
   );
 }

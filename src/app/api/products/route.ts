@@ -94,6 +94,22 @@ export async function POST(req: Request) {
       update: { ...data, active: true },
     });
 
+    // If alerts for this TCIN were imported before the product existed, attach
+    // those saved dates automatically as soon as the catalog entry is created.
+    const pendingDrops = await prisma.untrackedDropEvent.findMany({
+      where: { retailer, sku },
+      select: { dropDate: true },
+    });
+    if (pendingDrops.length) {
+      await prisma.$transaction([
+        prisma.dropEvent.createMany({
+          data: pendingDrops.map((event) => ({ productId: product.id, dropDate: event.dropDate })),
+          skipDuplicates: true,
+        }),
+        prisma.untrackedDropEvent.deleteMany({ where: { retailer, sku } }),
+      ]);
+    }
+
     await recordSnapshot(product.id, data.marketPrice, retailPrice);
     await recordAudit({
       productId: product.id,

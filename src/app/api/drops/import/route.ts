@@ -78,10 +78,22 @@ export async function POST(req: Request) {
     ? await prisma.dropEvent.createMany({ data: tracked, skipDuplicates: true })
     : { count: 0 };
   const untrackedSkus = skus.filter((sku) => !productBySku.has(sku));
+  const untracked = unique.filter((drop) => !productBySku.has(drop.sku));
+  const savedUntracked = untracked.length
+    ? await prisma.untrackedDropEvent.createMany({
+        data: untracked.map((drop) => ({
+          retailer: "TARGET",
+          sku: drop.sku,
+          dropDate: new Date(`${drop.date}T00:00:00.000Z`),
+        })),
+        skipDuplicates: true,
+      })
+    : { count: 0 };
 
   return NextResponse.json({
     imported: created.count,
     duplicatesIgnored: (parsed.length - unique.length) + (tracked.length - created.count),
     untrackedSkus,
+    savedForLater: savedUntracked.count,
   });
 }

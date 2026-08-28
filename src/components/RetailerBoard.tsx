@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
-import { auth, signOut } from "@/auth";
+import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { computeRoi, roiBucket } from "@/lib/roi";
 import { RETAILERS, type RetailerKey } from "@/lib/retailers";
 import Dashboard, { type Row } from "@/components/Dashboard";
 import ActivityHeartbeat from "@/components/ActivityHeartbeat";
+import AppHeader from "@/components/AppHeader";
 
 /**
  * One board per retailer. Target and Walmart never share a list — separate
@@ -33,6 +33,11 @@ export default async function RetailerBoard({ retailer }: { retailer: RetailerKe
           orderBy: { dropDate: "desc" },
           take: 5,
           select: { dropDate: true },
+        },
+        watchedBy: {
+          where: { userId: session.user.id },
+          take: 1,
+          select: { id: true },
         },
       },
     }),
@@ -64,6 +69,8 @@ export default async function RetailerBoard({ retailer }: { retailer: RetailerKe
         retailPrice: snapshot.retailPrice != null ? Number(snapshot.retailPrice) : null,
       })),
       dropDates: p.dropEvents.map((event) => event.dropDate.toISOString().slice(0, 10)),
+      lastDropDate: p.dropEvents[0]?.dropDate.toISOString().slice(0, 10) ?? null,
+      watched: p.watchedBy.length > 0,
       retailPrice,
       marketPrice,
       linked: p.tcgProductId != null,
@@ -78,22 +85,13 @@ export default async function RetailerBoard({ retailer }: { retailer: RetailerKe
   return (
     <>
       <ActivityHeartbeat />
-      <header className="topbar">
-        <nav className="store-nav">
-          <Link className={retailer === "TARGET" ? "on" : ""} href="/target">Target</Link>
-        </nav>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <span className="muted" style={{ fontSize: 13 }}>{session.user.name}</span>
-          <form
-            action={async () => {
-              "use server";
-              await signOut({ redirectTo: "/login" });
-            }}
-          >
-            <button className="ghost-btn" style={{ width: "auto" }} type="submit">Log out</button>
-          </form>
-        </div>
-      </header>
+      <AppHeader
+        current="products"
+        user={{
+          username: user?.username ?? session.user.name ?? "User",
+          avatarUrl: user?.avatarUrl ?? null,
+        }}
+      />
 
       <main className="page">
         <h1 className="title">

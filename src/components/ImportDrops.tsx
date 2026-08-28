@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import LoadingSpinner from "./LoadingSpinner";
+import { useToast } from "./ToastProvider";
 
 const MAX_IMPORT_CHARS = 300_000;
 
@@ -24,6 +26,7 @@ function splitImportText(value: string) {
 
 export default function ImportDrops({ onClose }: { onClose: () => void }) {
   const router = useRouter();
+  const { showToast } = useToast();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -49,6 +52,7 @@ export default function ImportDrops({ onClose }: { onClose: () => void }) {
       const chunks = splitImportText(text);
       let imported = 0;
       let duplicatesIgnored = 0;
+      let savedForLater = 0;
       const untrackedSkus = new Set<string>();
 
       for (let index = 0; index < chunks.length; index += 1) {
@@ -64,6 +68,7 @@ export default function ImportDrops({ onClose }: { onClose: () => void }) {
           imported?: number;
           duplicatesIgnored?: number;
           untrackedSkus?: string[];
+          savedForLater?: number;
         } = {};
         try {
           json = responseText ? JSON.parse(responseText) : {};
@@ -75,6 +80,7 @@ export default function ImportDrops({ onClose }: { onClose: () => void }) {
         }
         imported += json.imported ?? 0;
         duplicatesIgnored += json.duplicatesIgnored ?? 0;
+        savedForLater += json.savedForLater ?? 0;
         json.untrackedSkus?.forEach((sku) => untrackedSkus.add(sku));
       }
 
@@ -82,12 +88,15 @@ export default function ImportDrops({ onClose }: { onClose: () => void }) {
       const untracked = untrackedSkus.size
         ? ` Untracked TCINs: ${[...untrackedSkus].join(", ")}.`
         : "";
-      setResult(`${imported} drop dates imported. ${duplicatesIgnored} duplicate alerts ignored.${untracked}`);
+      const saved = savedForLater ? ` ${savedForLater} unmatched dates saved for later.` : "";
+      setResult(`${imported} drop dates imported. ${duplicatesIgnored} duplicate alerts ignored.${saved}${untracked}`);
+      showToast(`${imported} drop date${imported === 1 ? "" : "s"} imported.`);
       setText("");
       router.refresh();
     } catch (cause) {
       setBusy(false);
       setError(cause instanceof Error ? cause.message : "The import request failed.");
+      showToast(cause instanceof Error ? cause.message : "The import request failed.", "error");
     }
   }
 
@@ -118,7 +127,7 @@ export default function ImportDrops({ onClose }: { onClose: () => void }) {
             />
           </label>
           <button className="primary-btn" onClick={importDrops} disabled={busy || !text.trim()}>
-            {busy ? "Importing…" : "Import dates"}
+            {busy && <LoadingSpinner label="Importing drop dates" />} {busy ? "Importing…" : "Import dates"}
           </button>
         </div>
         {result && <p className="drop-import-result">{result}</p>}

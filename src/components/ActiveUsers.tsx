@@ -51,7 +51,7 @@ export default function ActiveUsers({ onClose }: { onClose: () => void }) {
         </div>
 
         {error && <p style={{ color: "var(--red)" }}>{error}</p>}
-        {!users && !error && <p className="muted">Loading…</p>}
+        {!users && !error && <div className="skeleton-list" aria-label="Loading active users"><span /><span /><span /></div>}
         {users?.length === 0 && <p className="muted">No users have logged in yet.</p>}
         {users && users.length > 0 && (
           <ul className="users-list">

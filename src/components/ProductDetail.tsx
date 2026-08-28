@@ -5,6 +5,9 @@ import { money, pct } from "@/lib/roi";
 import { RETAILERS, type RetailerKey } from "@/lib/retailers";
 import EditableCell from "./EditableCell";
 import type { Row } from "./Dashboard";
+import WatchlistHeart from "./WatchlistHeart";
+import LoadingSpinner from "./LoadingSpinner";
+import { useToast } from "./ToastProvider";
 
 type Point = { date: string; marketPrice: number | null; retailPrice: number | null };
 type BackfillProgress = {
@@ -24,15 +27,22 @@ export default function ProductDetail({
   row,
   retailer,
   canEdit,
+  watched,
+  watchBusy,
+  onToggleWatchlist,
   onSave,
   onClose,
 }: {
   row: Row;
   retailer: RetailerKey;
   canEdit: boolean;
+  watched: boolean;
+  watchBusy: boolean;
+  onToggleWatchlist: () => Promise<void>;
   onSave: (id: string, patch: Record<string, unknown>) => Promise<boolean>;
   onClose: () => void;
 }) {
+  const { showToast } = useToast();
   const [points, setPoints] = useState<Point[]>(row.history);
   const [error, setError] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState(row.productName);
@@ -61,6 +71,7 @@ export default function ProductDetail({
 
   const priced = points.filter((p) => p.marketPrice != null);
   const meta = RETAILERS[retailer];
+  const lastDropAge = formatDropAge(row.lastDropDate);
 
   async function saveName(value: string | number | null) {
     const name = String(value ?? "").trim();
@@ -104,15 +115,19 @@ export default function ProductDetail({
       window.clearInterval(timer);
       setBackfilling(false);
       if (!response.ok) {
-        setBackfillNote(result.error ?? "Price-history backfill failed.");
+        const message = result.error ?? "Price-history backfill failed.";
+        setBackfillNote(message);
+        showToast(message, "error");
         return;
       }
       setBackfillNote(`Imported ${result.snapshots ?? 0} price points. Temporary files were deleted.`);
+      showToast(`Imported ${result.snapshots ?? 0} historical price points.`);
       setHistoryVersion((version) => version + 1);
     } catch {
       window.clearInterval(timer);
       setBackfilling(false);
       setBackfillNote("The backfill request failed. Check the server console.");
+      showToast("The price-history backfill request failed.", "error");
     }
   }
 
@@ -135,7 +150,7 @@ export default function ProductDetail({
                 {row.brand} · {meta.skuLabel} <span className="num">{row.sku}</span>
                 {row.linked && <span className="linked-dot" title="Priced from TCGplayer"> ●</span>}
               </p>
-              {(row.productUrl || canEdit) && (
+              {(row.productUrl || canEdit || lastDropAge) && (
                 <div className="detail-actions">
                   {row.productUrl && (
                     <a className="detail-link" href={row.productUrl} target="_blank" rel="noreferrer">
@@ -153,11 +168,26 @@ export default function ProductDetail({
                       <span className="prerelease-switch" aria-hidden="true" />
                     </label>
                   )}
+                  {lastDropAge && (
+                    <span className="detail-last-drop-badge">
+                      Last drop <strong className="num">{lastDropAge}</strong>
+                    </span>
+                  )}
                 </div>
               )}
             </div>
           </div>
-          <button className="ghost-btn" style={{ width: "auto" }} onClick={onClose}>Close</button>
+          <div className="detail-head-actions">
+            <button
+              className={`detail-watchlist-button ${watched ? "on" : ""}`}
+              disabled={watchBusy}
+              onClick={() => void onToggleWatchlist()}
+            >
+              {watchBusy ? <LoadingSpinner label="Updating watchlist" /> : <WatchlistHeart filled={watched} />}
+              {watchBusy ? "Updating…" : watched ? "On watchlist" : "Add to watchlist"}
+            </button>
+            <button className="ghost-btn" style={{ width: "auto" }} onClick={onClose}>Close</button>
+          </div>
         </div>
 
         <div className="detail-release-date">
@@ -252,6 +282,21 @@ export default function ProductDetail({
       </div>
     </div>
   );
+}
+
+function formatDropAge(date: string | null) {
+  if (!date) return null;
+  const [year, month, day] = date.split("-").map(Number);
+  if (!year || !month || !day) return null;
+
+  const dropped = new Date(year, month - 1, day);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.max(0, Math.round((today.getTime() - dropped.getTime()) / 86_400_000));
+
+  if (days === 0) return "today";
+  if (days === 1) return "1 day ago";
+  return `${days} days ago`;
 }
 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {

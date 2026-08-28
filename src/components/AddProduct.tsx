@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { BRANDS, RETAILERS, parseProductUrl, guessBrand, type RetailerKey } from "@/lib/retailers";
+import { useToast } from "./ToastProvider";
+import LoadingSpinner from "./LoadingSpinner";
 
 type TcgMatch = {
   productId: number;
@@ -24,6 +26,7 @@ const blank = () => ({
 
 export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
   const router = useRouter();
+  const { showToast } = useToast();
   const meta = RETAILERS[retailer];
 
   const [form, setForm] = useState(blank);
@@ -154,7 +157,9 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
       });
     } catch {
       setBusy(false);
-      setStatus("Couldn't reach the server. Check that the local server is still running.");
+      const message = "Couldn't reach the server. Check that the local server is still running.";
+      setStatus(message);
+      showToast(message, "error");
       return false;
     }
 
@@ -171,11 +176,11 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
     setBusy(false);
 
     if (!res.ok && !json.saved) {
-      setStatus(
-        json.problems?.join(" ")
+      const message = json.problems?.join(" ")
           ?? json.error
-          ?? `The server couldn't add this SKU (${res.status}). Check the server console for the underlying error.`,
-      );
+          ?? `The server couldn't add this SKU (${res.status}). Check the server console for the underlying error.`;
+      setStatus(message);
+      showToast(message, "error");
       return false;
     }
     setStatus(
@@ -183,6 +188,7 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
         ? `Added ${json.saved}. Skipped ${json.problems.length}: ${json.problems[0]}`
         : null,
     );
+    showToast(json.saved === 1 ? "SKU added." : `${json.saved ?? 0} SKUs added.`);
     router.refresh();
     return true;
   }
@@ -268,14 +274,14 @@ export default function AddProduct({ retailer }: { retailer: RetailerKey }) {
 
           <div className="add-product-actions">
             <button className="ghost-btn" style={{ width: "auto" }} onClick={findMarket} disabled={searching}>
-              {searching ? "Searching…" : "Find on TCGplayer"}
+              {searching && <LoadingSpinner label="Searching TCGplayer" />} {searching ? "Searching…" : "Find on TCGplayer"}
             </button>
             <button
               className="primary-btn"
               onClick={addOne}
               disabled={busy || !form.sku.trim() || !form.productName.trim() || !form.retailPrice}
             >
-              {busy ? "Adding…" : "Add SKU"}
+              {busy && <LoadingSpinner label="Adding SKU" />} {busy ? "Adding…" : "Add SKU"}
             </button>
           </div>
 
